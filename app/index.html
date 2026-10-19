@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dice Lab</title>
+    <!-- Inline, so the package carries no image file for the sake of one tab icon — and so the
+         console is not reporting a 404 at a tester who might take it for a real fault. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232b1416'/%3E%3Cg fill='%23dfe6ef'%3E%3Ccircle cx='10' cy='10' r='3'/%3E%3Ccircle cx='22' cy='10' r='3'/%3E%3Ccircle cx='16' cy='16' r='3'/%3E%3Ccircle cx='10' cy='22' r='3'/%3E%3Ccircle cx='22' cy='22' r='3'/%3E%3C/g%3E%3C/svg%3E"
+    />
+    <!--
+      The dice roller from the VTT map project, on its own.
+
+      **The markup and CSS below are lifted from demo/index.html, not rewritten.** What changed is
+      only what had to: the shell around it is gone, so the three custom properties the tray used to
+      position itself against (--sidebar-width, --sidebar-toggle-width, --modebar-height) are gone
+      with it and #dice-stage simply fills the window. --tray-gutter stays, because that one is
+      written from TypeScript rather than by the shell.
+
+      The jinn's wish card, which sat in the middle of this block in the original, is not here. It
+      is not part of the dice.
+    -->
+    <style>
+      :root {
+        color-scheme: dark;
+        /* What the app called --sidebar-width. The scrim measures itself against this so the rail
+           stays outside it — see #dice-stage. */
+        --rail-width: 260px;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #14171c;
+        color: #dfe6ef;
+        font: 13px/1.5 system-ui, sans-serif;
+      }
+
+      /* The rail, standing in for the app's sidebar. Not lifted from anywhere — the original is a
+         whole accordion of map, layer and weather sections, and the dice section is four lines of
+         it. This keeps the part that matters: the trigger, and the one-line record of the last
+         throw that stays readable after the panel is put away. */
+      #rail {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        /* Above the scrim, so it stays legible and clickable while a roll is on the felt. */
+        z-index: 950;
+        width: var(--rail-width);
+        padding: 16px;
+        box-sizing: border-box;
+        background: #0f1216;
+        border-right: 1px solid #262b33;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      #rail h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        color: #eee;
+      }
+      #rail .hint {
+        color: #8a93a0;
+        font-size: 11px;
+      }
+      #rail .hint b {
+        color: #cbd3dd;
+        font-weight: 600;
+      }
+      #dice-open {
+        padding: 8px 0;
+        background: #1b1e26;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: #dfe6ef;
+        cursor: pointer;
+      }
+      #dice-open:hover {
+        border-color: #4a515c;
+      }
+      .status-detail {
+        display: block;
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        color: #aaa;
+      }
+
+      /* ---- lifted from demo/index.html, 768-1035 (minus the wish card at 838-901) ---- */
+
+      /* The map area, exactly as #reveal-notice measures it, with the tray centred in it.
+         **The wrapper is the scrim as well as the frame.** It dims the board so the roll is the
+         thing you are looking at, and it takes the pointer events the board would have had — a
+         dimmed map that still responded to clicks would read as a bug. Clicking anywhere on it
+         clears the dice, so a modal overlay is never something you can get stuck behind.
+         --tray-gutter is written from main.ts: the room the Roll Dice panel needs, so a centred
+         tray does not slide underneath it. */
+      #dice-stage {
+        position: fixed;
+        top: 0;
+        /* **Not `inset: 0`.** The original stopped the scrim at the sidebar's edge on purpose —
+           "only the map area, so the rail and the mode bar stay bright and usable". Run it across
+           the whole window and the rail is dimmed, and worse, the scrim swallows the rail's clicks:
+           Roll dice stops working while dice are on the felt. */
+        left: var(--rail-width);
+        right: 0;
+        bottom: 0;
+        z-index: 900;
+        pointer-events: auto;
+        cursor: pointer;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        padding-left: clamp(24px, 4vw, 56px);
+        padding-right: var(--tray-gutter, 0px);
+        /* An animation rather than a transition: the element is shown and hidden with [hidden], and
+           a transition has nothing to run from when display flips back on. */
+        animation: dice-stage-in 140ms ease-out;
+      }
+      @keyframes dice-stage-in {
+        from {
+          opacity: 0;
+        }
+      }
+      /* **Required, not tidiness** — the rule above declares a `display`, which outranks the
+         browser's `[hidden] { display: none }`. */
+      #dice-stage[hidden] {
+        display: none;
+      }
+      /* Square, because the tray is. The size is written from main.ts, which is also what tells
+         the renderer its buffer size — see DiceStage.resize on why it is given, never measured. */
+      #dice-stage-canvas {
+        display: block;
+      }
+      /* The dice tray panel. Fixed, and the position never changes — a tray is not attached to
+         anything on the map, so it sits where you left it. Right-hand side, clear of the rail. */
+      #dice-panel {
+        position: fixed;
+        z-index: 1000;
+        top: 16px;
+        right: 16px;
+        width: 232px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        background: rgba(10, 12, 16, 0.82);
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: #dfe6ef;
+        font-size: 12px;
+      }
+      /* **Required, not tidiness** — the rule above declares a `display`, which outranks the
+         browser's `[hidden] { display: none }`. Without this the panel would never close, and the
+         TypeScript setting `.hidden` would be right while the CSS quietly ignored it. */
+      #dice-panel[hidden] {
+        display: none;
+      }
+      #dice-panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      #dice-panel-title {
+        font-size: 13px;
+        color: #eee;
+        /* The title takes the room, so the two buttons sit together on the right rather than at
+           either end of the head — which is what `space-between` would otherwise do to them. */
+        flex: 1;
+      }
+      #dice-close {
+        padding: 0 6px;
+        font-size: 16px;
+        line-height: 1;
+        background: none;
+        border: none;
+        color: #777;
+        cursor: pointer;
+      }
+      #dice-close:hover {
+        color: #eee;
+      }
+      #dice-sound {
+        padding: 0 4px;
+        font-size: 12px;
+        line-height: 1;
+        background: none;
+        border: none;
+        cursor: pointer;
+        /* Dimmed rather than swapped for a crossed-out speaker: one glyph that changes weight reads
+           as one control in two states, where two glyphs read as two buttons. */
+        opacity: 0.85;
+      }
+      #dice-sound[aria-pressed="false"] {
+        opacity: 0.3;
+        filter: grayscale(1);
+      }
+      /* Four across, so the seven dice fall 4 + 3 the way the reference panel does. */
+      .dice-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 4px;
+      }
+      #dice-mode-row {
+        grid-template-columns: minmax(88px, 1.35fr) minmax(46px, 0.65fr) minmax(72px, 1fr);
+      }
+      .dice-row button {
+        padding: 6px 0;
+        text-align: center;
+        font-size: 12px;
+        background: #1b1e26;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: #dfe6ef;
+        cursor: pointer;
+      }
+      .dice-row button.active {
+        background: #ffaa55;
+        border-color: #ffaa55;
+        color: #111;
+      }
+      .dice-row button:disabled {
+        color: #555;
+        cursor: default;
+      }
+      .dice-label {
+        display: block;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #999;
+        margin-bottom: 4px;
+      }
+      /* Greyed rather than hidden when Advantage does not apply, so the control says what it is
+         waiting for instead of appearing and disappearing as dice are added. */
+      #dice-mode-block.is-off .dice-label,
+      #dice-mode-block.is-off .dice-row button {
+        color: #555;
+      }
+      #dice-panel-line {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        color: #aaa;
+        min-height: 15px;
+      }
+      #dice-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      #dice-actions button {
+        padding: 7px 0;
+        text-align: center;
+        background: #1b1e26;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: #dfe6ef;
+        cursor: pointer;
+      }
+      /* Hold it to shake, let go to throw. `--shake` is written from main.ts while it is held, 0 to
+         1 across the ten seconds it is allowed to run, so the limit is something you can watch
+         approaching rather than something that surprises you. A hard-edged gradient rather than a
+         separate bar: it is the same button, filling. */
+      #dice-roll {
+        background: linear-gradient(
+          to right,
+          #c4553f 0,
+          #c4553f calc(var(--shake, 0) * 100%),
+          #7a2532 calc(var(--shake, 0) * 100%),
+          #7a2532 100%
+        );
+        border-color: #7a2532;
+        color: #ffe6d8;
+        /* Held buttons are dragged off by accident; the text going blue mid-shake reads as a bug. */
+        user-select: none;
+        touch-action: none;
+      }
+      #dice-clear {
+        padding: 5px 0;
+        background: none;
+        border: none;
+        color: #ffb454;
+        font-size: 11px;
+        text-align: right;
+        cursor: pointer;
+      }
+      #dice-roll:disabled {
+        background: #1b1e26;
+        border-color: #333;
+        color: #555;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="rail">
+      <h1>Dice Lab</h1>
+      <button id="dice-open" type="button">Roll dice</button>
+      <span class="status-detail" id="dice-result">Nothing thrown yet.</span>
+      <p class="hint">
+        <b>Hold</b> Roll to shake the cup, then let go to tip the dice out.
+        <b>Right-click</b> a die to take one away. Click the dimmed area to sweep the tray.
+      </p>
+      <p class="hint" id="rail-character"></p>
+    </div>
+
+    <!-- The tray the dice are thrown into. A canvas of its own with its own WebGL context — see
+         renderer/diceFx.ts for why a second render pass into the map's renderer would not have been
+         "over the map and not interacting with it" in the way that matters, which is pointer events.
+
+         The wrapper dims the board behind the tray and swallows its clicks; clicking anywhere on
+         it — the felt or the dimmed area around it — sweeps the dice. -->
+    <div id="dice-stage" title="Click to clear the dice" hidden>
+      <canvas id="dice-stage-canvas"></canvas>
+    </div>
+
+    <!-- Everything inside the panel is written from app/diceTray.ts and engine/tray.ts — the seven
+         dice buttons in particular, because a list typed into markup is a list wired to nothing.
+
+         **The one panel in the original app with a close button.** Every other overlay there is
+         dismissed by state — a mode change, a deselect, a timer — and that is the better pattern
+         where the overlay is a read-out. This one is a tool you open, use and put away, so it gets
+         an X. -->
+    <div id="dice-panel" hidden>
+      <div id="dice-panel-head">
+        <span id="dice-panel-title">Roll Dice</span>
+        <!-- The only sound this app makes, and the only way to stop it. Beside the close button
+             because both are about the panel rather than about the roll. -->
+        <button id="dice-sound" type="button" aria-pressed="true" aria-label="Sound">&#128266;</button>
+        <button id="dice-close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="dice-row" id="dice-type-row"></div>
+      <div id="dice-mode-block">
+        <span class="dice-label">Advantage</span>
+        <div class="dice-row" id="dice-mode-row"></div>
+      </div>
+      <div id="dice-ability-block">
+        <span class="dice-label">Modifier</span>
+        <div class="dice-row" id="dice-ability-row"></div>
+      </div>
+      <!-- How big the dice are drawn. A preference about looking rather than about rolling: the
+           setting only gives dieRadius a ceiling, so it cannot change what a die shows, and picking
+           one re-throws the roll already on the felt from its own seed to prove it. -->
+      <div id="dice-size-block">
+        <span class="dice-label">Size</span>
+        <div class="dice-row" id="dice-size-row"></div>
+      </div>
+      <span id="dice-panel-line">Nothing thrown yet.</span>
+      <div id="dice-actions">
+        <button id="dice-reset" type="button">Reset</button>
+        <button id="dice-roll" type="button">Roll</button>
+      </div>
+      <!-- Reset empties the tray you are about to throw; this sweeps the dice already on the felt.
+           Two buttons because they undo two different things. -->
+      <button id="dice-clear" type="button">Clear dice</button>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

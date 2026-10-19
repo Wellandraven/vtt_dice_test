@@ -1,0 +1,38 @@
+{
+  "name": "dice-lab",
+  "version": "0.2.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "type": "module",
+  "description": "A Next.js usability study for comparing virtual-tabletop dice interfaces.",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "drizzle-orm": "0.45.2",
+    "next": "16.3.3",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/three": "^0.185.1",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.3.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
