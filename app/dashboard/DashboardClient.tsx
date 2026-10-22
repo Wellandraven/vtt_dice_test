@@ -1,6 +1,6 @@
 "use client";
 
-import { MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const interfacePreviews = [
   { id: "A", image: "/interface-previews/interface-a.png", href: "/preview?interface=A" },
@@ -38,28 +38,6 @@ interface DashboardData {
     averageComfort: number | null;
     familiarity: Array<{ value: string; count: number }>;
   };
-  sessions: Array<{
-    id: string;
-    studyPhase: string;
-    sequence: string;
-    status: string;
-    currentPosition: number;
-    viewportClass: string;
-    createdAt: number;
-    completedAt: number | null;
-    lastActivityAt: number;
-    completedTrials: number;
-    scoredTrials: number;
-    helpOpened: number;
-  }>;
-  contacts: Array<{
-    id: string;
-    kind: string;
-    email: string;
-    sessionId: string | null;
-    studyPhase: string;
-    consentedAt: number;
-  }>;
   surveySummary: Array<{
     interfaceId: string;
     responseCount: number;
@@ -69,26 +47,7 @@ interface DashboardData {
     highConfidenceCount: number;
     commentCount: number;
   }>;
-  surveyResponses: Array<{
-    id: string;
-    sessionId: string;
-    studyPhase: string;
-    interfaceId: string;
-    sequence: string;
-    ease: number | null;
-    confidence: number | null;
-    comment: string;
-    submittedAt: number;
-  }>;
-  clickAudit: Array<{
-    id: string;
-    sessionId: string;
-    studyPhase: string;
-    interfaceId: string | null;
-    taskId: string | null;
-    occurredAt: number;
-    payload: { control?: unknown; phase?: unknown; x?: unknown; y?: unknown; xPercent?: unknown; yPercent?: unknown };
-  }>;
+  clickSummary: Array<{ interfaceId: string; averageClicks: number | null; observedSessions: number; totalClicks: number }>;
 }
 
 export default function DashboardClient() {
@@ -300,7 +259,7 @@ function AnalysisDialog({ data, onClose }: { data: DashboardData; onClose: () =>
       <div className="analysis-summary"><span>{isHistoricalOverview ? "Combined historical overview" : analysis.confidence}</span><h3>{analysis.headline}</h3><p>{isHistoricalOverview ? "This analysis combines all recorded phases to surface broad patterns, friction points, and participant feedback. Because protocols changed between phases, use the individual phase views to validate any interface-selection decision." : `Generated from ${data.selectedPhase ?? data.phase}. Findings are directional and should be validated with participant context.`}</p></div>
       <div className="analysis-section"><h3>Key insights</h3><div className="analysis-insights">{analysis.insights.map((insight) => <article className={`is-${insight.tone}`} key={insight.title}><i aria-hidden="true" /><div><strong>{insight.title}</strong><p>{insight.detail}</p></div></article>)}</div></div>
       <div className="analysis-section"><h3>Recommended next steps</h3><ol className="analysis-recommendations">{analysis.recommendations.map((item) => <li key={item}>{item}</li>)}</ol></div>
-      <footer><small>Analyzed {data.summary.totalSessions} sessions, {data.interfaces.reduce((sum, item) => sum + item.completedTrials, 0)} scored trials, {data.surveyResponses.length} survey responses, and {data.clickAudit.length} recorded clicks.</small><button type="button" onClick={onClose}>Done</button></footer>
+      <footer><small>Analyzed {data.summary.totalSessions} sessions, {data.interfaces.reduce((sum, item) => sum + item.completedTrials, 0)} scored trials, {data.surveySummary.reduce((sum, item) => sum + item.responseCount, 0)} survey responses, and {data.clickSummary.reduce((sum, item) => sum + item.totalClicks, 0)} recorded clicks.</small><button type="button" onClick={onClose}>Done</button></footer>
     </section>
   </div>;
 }
@@ -322,16 +281,9 @@ function analyzeStudy(data: DashboardData): StudyAnalysis {
   const byErrors = [...scored].filter((item) => item.averageInvalidAttempts !== null).sort((a, b) => (a.averageInvalidAttempts ?? Infinity) - (b.averageInvalidAttempts ?? Infinity));
   const leaders = [bySpeed[0]?.interfaceId, byEase[0]?.interfaceId, byConfidence[0]?.interfaceId].filter(Boolean);
   const consensus = leaders.length === 3 && new Set(leaders).size === 1 ? leaders[0] : null;
-  const clickGroups = new Map<string, number>();
-  for (const event of data.clickAudit) {
-    if (!event.interfaceId) continue;
-    const key = `${event.sessionId}:${event.interfaceId}`;
-    clickGroups.set(key, (clickGroups.get(key) ?? 0) + 1);
-  }
-  const clickAverages = ["A", "B", "C"].map((interfaceId) => {
-    const values = [...clickGroups.entries()].filter(([key]) => key.endsWith(`:${interfaceId}`)).map(([, count]) => count);
-    return { interfaceId, average: values.length ? values.reduce((sum, count) => sum + count, 0) / values.length : null };
-  }).filter((item) => item.average !== null).sort((a, b) => (a.average ?? Infinity) - (b.average ?? Infinity));
+  const clickAverages = data.clickSummary
+    .map((item) => ({ interfaceId: item.interfaceId, average: item.averageClicks }))
+    .filter((item) => item.average !== null).sort((a, b) => (a.average ?? Infinity) - (b.average ?? Infinity));
   const sequenceCounts = data.sequences.map((item) => item.sessions);
   const sequenceSpread = sequenceCounts.length ? Math.max(...sequenceCounts) - Math.min(...sequenceCounts) : 0;
   const minimumTrials = Math.min(...scored.map((item) => item.completedTrials));
@@ -360,103 +312,6 @@ function analyzeStudy(data: DashboardData): StudyAnalysis {
     insights,
     recommendations,
   };
-}
-
-function ExportMenu({ data }: { data: DashboardData }) {
-  function exportFile(format: "csv" | "md", event: MouseEvent<HTMLButtonElement>) {
-    const stamp = new Date(data.generatedAt).toISOString().slice(0, 10);
-    const content = format === "csv" ? buildCsvExport(data) : buildMarkdownExport(data);
-    downloadTextFile(`dice-interface-lab-${data.selectedPhase ?? "all-phases"}-${stamp}.${format}`, content, format === "csv" ? "text/csv;charset=utf-8" : "text/markdown;charset=utf-8");
-    event.currentTarget.closest("details")?.removeAttribute("open");
-  }
-
-  return <details className="survey-export-menu">
-    <summary>Export data</summary>
-    <div>
-      <button type="button" onClick={(event) => exportFile("csv", event)}><strong>CSV spreadsheet</strong><small>{data.view === "all" ? "All historical records in rows" : "Selected phase in rows"}</small></button>
-      <button type="button" onClick={(event) => exportFile("md", event)}><strong>Markdown report</strong><small>Readable summary and details</small></button>
-    </div>
-  </details>;
-}
-
-type ExportRow = Record<string, string | number | null>;
-
-const EXPORT_COLUMNS = [
-  "record_type", "id", "study_phase", "interface_id", "sequence", "status", "metric", "value", "email", "consent",
-  "ease", "confidence", "comment", "created_at", "completed_at", "last_activity_at", "submitted_at",
-  "viewport", "completed_trials", "scored_trials", "help_opened",
-] as const;
-
-function buildCsvExport(data: DashboardData): string {
-  const summaryRows: ExportRow[] = [
-    ["total_sessions", data.summary.totalSessions], ["completed_sessions", data.summary.completedSessions],
-    ["active_sessions", data.summary.activeSessions], ["help_openers", data.summary.helpOpeners],
-  ].map(([metric, value]) => ({ record_type: "summary", study_phase: data.selectedPhase ?? "all", metric, value }));
-  const interfaceRows: ExportRow[] = data.interfaces.map((item) => ({
-    record_type: "interface", study_phase: data.selectedPhase ?? "all", interface_id: item.interfaceId, completed_trials: item.completedTrials,
-    metric: "performance", value: item.averageElapsedMs, ease: item.averageEase, confidence: item.averageConfidence,
-    comment: `Average invalid attempts: ${item.averageInvalidAttempts ?? ""}; help trials: ${item.helpTrials}`,
-  }));
-  const profileRows: ExportRow[] = [
-    ...data.profileAnalytics.tools.map((item) => ({ record_type: "pre_test", study_phase: data.selectedPhase ?? "all", metric: `vtt_tool:${item.value}`, value: item.count })),
-    ...data.profileAnalytics.comfort.map((item) => ({ record_type: "pre_test", study_phase: data.selectedPhase ?? "all", metric: `vtt_comfort:${item.value}`, value: item.count })),
-    ...data.profileAnalytics.familiarity.map((item) => ({ record_type: "pre_test", study_phase: data.selectedPhase ?? "all", metric: `dice_familiarity:${item.value}`, value: item.count })),
-    ...data.profileAnalytics.otherTools.map((item) => ({ record_type: "pre_test", study_phase: data.selectedPhase ?? "all", metric: "vtt_tool:other_detail", comment: item.value, value: item.count })),
-  ];
-  const sessionRows: ExportRow[] = data.sessions.map((item) => ({
-    record_type: "session", id: item.id, study_phase: item.studyPhase, sequence: item.sequence, status: item.status, viewport: item.viewportClass,
-    created_at: isoDate(item.createdAt), completed_at: isoDate(item.completedAt), last_activity_at: isoDate(item.lastActivityAt),
-    completed_trials: item.completedTrials, scored_trials: item.scoredTrials, help_opened: item.helpOpened,
-  }));
-  const surveyRows: ExportRow[] = data.surveyResponses.map((item) => ({
-    record_type: "survey_response", id: item.sessionId, study_phase: item.studyPhase, interface_id: item.interfaceId, sequence: item.sequence,
-    ease: item.ease, confidence: item.confidence, comment: item.comment, submitted_at: isoDate(item.submittedAt),
-  }));
-  const contactRows: ExportRow[] = data.contacts.map((item) => ({
-    record_type: "contact", id: item.sessionId, email: item.email, consent: item.kind,
-    study_phase: item.studyPhase, submitted_at: isoDate(item.consentedAt),
-  }));
-  const clickRows: ExportRow[] = [...data.clickAudit].reverse().map((item) => ({
-    record_type: "click_audit", id: item.sessionId, interface_id: item.interfaceId, metric: textPayload(item.payload.control),
-    study_phase: item.studyPhase, status: textPayload(item.payload.phase), value: item.occurredAt, submitted_at: isoDate(item.occurredAt),
-    comment: `task=${item.taskId ?? ""}; x=${textPayload(item.payload.x)}; y=${textPayload(item.payload.y)}`,
-  }));
-  const rows = [...summaryRows, ...interfaceRows, ...profileRows, ...sessionRows, ...surveyRows, ...contactRows, ...clickRows];
-  return `\uFEFF${EXPORT_COLUMNS.join(",")}\r\n${rows.map((row) => EXPORT_COLUMNS.map((column) => csvCell(row[column])).join(",")).join("\r\n")}\r\n`;
-}
-
-function buildMarkdownExport(data: DashboardData): string {
-  const lines = [
-    "# Dice Interface Lab — Test Data", "", `- Data set: **${data.selectedPhase ?? "All historical phases"}** (${data.mode.toUpperCase()})`,
-    ...(data.view === "all" ? ["- Note: protocols differ by phase; use phase-specific views for experiment decisions."] : []),
-    `- Exported: ${new Date(data.generatedAt).toLocaleString()}`, "", "## Study summary", "",
-    "| Sessions | Completed | Active | Opened help |", "| ---: | ---: | ---: | ---: |",
-    `| ${data.summary.totalSessions} | ${data.summary.completedSessions} | ${data.summary.activeSessions} | ${data.summary.helpOpeners} |`,
-    "", "## Interface performance", "", "| Interface | Completed trials | Avg. time | Invalid attempts | Ease | Confidence | Help trials |",
-    "| :--- | ---: | ---: | ---: | ---: | ---: | ---: |",
-    ...data.interfaces.map((item) => `| ${mdCell(item.interfaceId)} | ${item.completedTrials} | ${formatDuration(item.averageElapsedMs)} | ${formatNumber(item.averageInvalidAttempts)} | ${formatRating(item.averageEase)} | ${formatRating(item.averageConfidence)} | ${item.helpTrials} |`),
-    "", "## Pre-test participant profile", "", `Responses: **${data.profileAnalytics.respondents}** · Average VTT comfort: **${data.profileAnalytics.averageComfort?.toFixed(1) ?? "—"} / 5**`, "",
-    "| Question | Answer | Responses |", "| :--- | :--- | ---: |",
-    ...data.profileAnalytics.tools.map((item) => `| VTT tools used | ${mdCell(profileLabel(item.value))} | ${item.count} |`),
-    ...data.profileAnalytics.comfort.map((item) => `| VTT comfort | ${item.value} / 5 | ${item.count} |`),
-    ...data.profileAnalytics.familiarity.map((item) => `| Dice notation familiarity | ${mdCell(profileLabel(item.value))} | ${item.count} |`),
-    ...data.profileAnalytics.otherTools.map((item) => `| Other VTT | ${mdCell(item.value)} | ${item.count} |`),
-    "", "## Sessions", "", "| Session | Data set | Status | Sequence | Screen | Completed trials | Scored trials | Help | Created | Completed | Last activity |",
-    "| :--- | :--- | :--- | :--- | :--- | ---: | ---: | :--- | :--- | :--- | :--- |",
-    ...data.sessions.map((item) => `| ${mdCell(item.id)} | ${mdCell(item.studyPhase)} | ${mdCell(item.status)} | ${mdCell(item.sequence)} | ${mdCell(item.viewportClass)} | ${item.completedTrials} | ${item.scoredTrials} | ${item.helpOpened ? "Yes" : "No"} | ${mdDate(item.createdAt)} | ${mdDate(item.completedAt)} | ${mdDate(item.lastActivityAt)} |`),
-    "", "## Survey responses", "", "| Session | Data set | Interface | Sequence | Ease | Confidence | Submitted | Comment |",
-    "| :--- | :--- | :---: | :--- | ---: | ---: | :--- | :--- |",
-    ...data.surveyResponses.map((item) => `| ${mdCell(item.sessionId)} | ${mdCell(item.studyPhase)} | ${mdCell(item.interfaceId)} | ${mdCell(item.sequence)} | ${item.ease ?? "—"} | ${item.confidence ?? "—"} | ${mdDate(item.submittedAt)} | ${mdCell(item.comment || "No comment")} |`),
-    "", "## Contact submissions", "", "| Email | Consent | Session | Data set | Submitted |", "| :--- | :--- | :--- | :--- | :--- |",
-    ...data.contacts.map((item) => `| ${mdCell(item.email)} | ${mdCell(item.kind)} | ${mdCell(item.sessionId ?? "—")} | ${mdCell(item.studyPhase)} | ${mdDate(item.consentedAt)} |`), "",
-    "## Click audit", "", "| Session | Data set | Interface | Task | Time | Control | Position |", "| :--- | :--- | :---: | :--- | :--- | :--- | :--- |",
-    ...[...data.clickAudit].reverse().map((item) => `| ${mdCell(item.sessionId)} | ${mdCell(item.studyPhase)} | ${mdCell(item.interfaceId ?? "—")} | ${mdCell(item.taskId ?? "—")} | ${mdDate(item.occurredAt)} | ${mdCell(textPayload(item.payload.control) || "Unknown control")} | ${mdCell(clickPosition(item.payload))} |`), "",
-  ];
-  return lines.join("\n");
-}
-
-function downloadTextFile(filename: string, content: string, type: string) {
-  downloadBlob(filename, new Blob([content], { type }));
 }
 
 function downloadBlob(filename: string, blob: Blob) {
@@ -559,21 +414,6 @@ function escapePdfText(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 
-function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? "" : String(value);
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-function isoDate(value: number | null): string { return value ? new Date(value).toISOString() : ""; }
-function mdDate(value: number | null): string { return value ? mdCell(new Date(value).toLocaleString()) : "—"; }
-function mdCell(value: string): string { return value.replace(/\|/g, "\\|").replace(/[\r\n]+/g, "<br>"); }
-function textPayload(value: unknown): string { return typeof value === "string" || typeof value === "number" ? String(value) : ""; }
-function clickPosition(payload: DashboardData["clickAudit"][number]["payload"]): string {
-  const x = textPayload(payload.xPercent);
-  const y = textPayload(payload.yPercent);
-  return x && y ? `${x}% × ${y}%` : "—";
-}
-
 function SurveySummary({ items }: { items: DashboardData["surveySummary"] }) {
   if (!items.length) return <p className="dashboard-empty">No survey responses have been submitted for this data set.</p>;
   return <div className="survey-summary-grid">{items.map((item) => {
@@ -586,74 +426,8 @@ function SurveySummary({ items }: { items: DashboardData["surveySummary"] }) {
   })}</div>;
 }
 
-function SurveyResponses({ responses }: { responses: DashboardData["surveyResponses"] }) {
-  if (!responses.length) return null;
-  return <div className="survey-response-list">{responses.map((response) => <details className="survey-response" key={response.id}>
-    <summary>
-      <span className="interface-badge is-static">{response.interfaceId}</span>
-      <span><strong>Session {response.sessionId.slice(0, 8)}</strong><small>{new Date(response.submittedAt).toLocaleString()} · {response.studyPhase} · sequence {response.sequence}</small></span>
-      <span className="survey-response-ratings"><span>Ease <strong>{response.ease ?? "—"}/5</strong></span><span>Confidence <strong>{response.confidence ?? "—"}/5</strong></span></span>
-    </summary>
-    <div className="survey-comment"><span>Participant comment</span><p>{response.comment || "No written comment provided."}</p></div>
-  </details>)}</div>;
-}
-
-function ClickAudit({ events }: { events: DashboardData["clickAudit"] }) {
-  const sessions = useMemo(() => {
-    const grouped = new Map<string, DashboardData["clickAudit"]>();
-    for (const event of [...events].reverse()) {
-      const group = grouped.get(event.sessionId) ?? [];
-      group.push(event);
-      grouped.set(event.sessionId, group);
-    }
-    return [...grouped.entries()].reverse();
-  }, [events]);
-  if (!sessions.length) return <p className="dashboard-empty">Click tracking begins with the next test session.</p>;
-  return <div className="click-audit-list">{sessions.map(([sessionId, clicks]) => {
-    const firstAt = clicks[0]?.occurredAt ?? 0;
-    const lastAt = clicks[clicks.length - 1]?.occurredAt ?? firstAt;
-    return <details className="click-audit-session" key={sessionId}>
-      <summary><span><strong>Session {sessionId.slice(0, 8)}</strong><small>{clicks.length} clicks · {clicks[0]?.studyPhase ?? "Unknown phase"} · {formatAuditOffset(lastAt - firstAt)} observed</small></span><span>{new Date(firstAt).toLocaleString()}</span></summary>
-      <ol>{clicks.map((event, index) => {
-        const previousAt = clicks[index - 1]?.occurredAt ?? event.occurredAt;
-        const control = textPayload(event.payload.control) || "Unknown control";
-        return <li key={event.id}>
-          <span className="click-audit-time">+{formatAuditOffset(event.occurredAt - firstAt)}</span>
-          <span className="click-audit-dot" aria-hidden="true" />
-          <span className="click-audit-action"><strong>{control}</strong><small>Interface {event.interfaceId ?? "—"}{event.taskId ? ` · ${event.taskId}` : ""} · {clickPosition(event.payload)}</small></span>
-          <span className="click-audit-gap">{index === 0 ? "First click" : `${formatAuditOffset(event.occurredAt - previousAt)} later`}</span>
-        </li>;
-      })}</ol>
-    </details>;
-  })}</div>;
-}
-
-function formatAuditOffset(milliseconds: number): string {
-  if (milliseconds < 1000) return `${Math.max(0, Math.round(milliseconds))}ms`;
-  if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)}s`;
-  return `${Math.floor(milliseconds / 60_000)}m ${Math.round((milliseconds % 60_000) / 1000)}s`;
-}
-
 function Metric({ label, value, detail, compact = false }: { label: string; value: string | number; detail: string; compact?: boolean }) {
   return <article className={`dashboard-metric${compact ? " is-compact" : ""}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>;
-}
-
-function SessionTable({ sessions, empty }: { sessions: DashboardData["sessions"]; empty: string }) {
-  if (!sessions.length) return <p className="dashboard-empty">{empty}</p>;
-  return (
-    <div className="dashboard-table-wrap"><table className="dashboard-table"><thead><tr><th>Session</th><th>Data set</th><th>Status</th><th>Sequence</th><th>Progress</th><th>Screen</th><th>Help</th><th>Last activity</th></tr></thead><tbody>
-      {sessions.map((session) => <tr key={session.id}>
-        <td><code>{session.id.slice(0, 8)}</code></td>
-        <td>{session.studyPhase}</td>
-        <td><span className={`session-status ${sessionStatusClass(session.status)}`}>{sessionStatusLabel(session.status)}</span></td>
-        <td>{session.sequence}</td>
-        <td>{session.completedTrials} trials</td>
-        <td>{session.viewportClass}</td>
-        <td>{session.helpOpened ? "Opened" : "—"}</td>
-        <td>{relativeTime(session.lastActivityAt)}</td>
-      </tr>)}
-    </tbody></table></div>
-  );
 }
 
 function ProfileAnalytics({ data }: { data: DashboardData["profileAnalytics"] | null }) {
@@ -677,42 +451,6 @@ function profileLabel(value: string): string {
   return ({ dndbeyond: "D&D Beyond", roll20: "Roll20", foundry: "Foundry VTT", owlbear: "Owlbear Rodeo", other: "Other", none: "None", unfamiliar: "Unfamiliar", somewhat: "Somewhat familiar", familiar: "Familiar" } as Record<string, string>)[value] ?? value;
 }
 
-function sessionStatusClass(status: string): string {
-  if (status === "active") return "is-active";
-  if (status === "incomplete") return "is-incomplete";
-  return "is-complete";
-}
-
-function sessionStatusLabel(status: string): string {
-  if (status === "active") return "Active";
-  if (status === "incomplete") return "Incomplete";
-  return "Complete";
-}
-
-function ContactTable({ contacts }: { contacts: DashboardData["contacts"] }) {
-  if (!contacts.length) return <p className="dashboard-empty">No email addresses have been submitted for this data set.</p>;
-  return (
-    <div className="dashboard-table-wrap"><table className="dashboard-table"><thead><tr><th>Email address</th><th>Consent</th><th>Session</th><th>Data set</th><th>Submitted</th></tr></thead><tbody>
-      {contacts.map((contact) => <tr key={contact.id}>
-        <td><a className="dashboard-email" href={`mailto:${contact.email}`}>{contact.email}</a></td>
-        <td>{contact.kind === "newsletter" ? "Email list" : "Session follow-up"}</td>
-        <td>{contact.sessionId ? <code>{contact.sessionId.slice(0, 8)}</code> : "—"}</td>
-        <td>{contact.studyPhase}</td>
-        <td>{new Date(contact.consentedAt).toLocaleString()}</td>
-      </tr>)}
-    </tbody></table></div>
-  );
-}
-
 function formatDuration(value: number | null): string { return value === null ? "—" : `${(value / 1000).toFixed(1)}s`; }
 function formatNumber(value: number | null): string { return value === null ? "—" : value.toFixed(2); }
 function formatRating(value: number | null): string { return value === null ? "—" : `${value.toFixed(1)} / 5`; }
-function relativeTime(timestamp: number): string {
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return new Date(timestamp).toLocaleDateString();
-}

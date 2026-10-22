@@ -27,30 +27,6 @@ interface ProfileRow {
   diceFamiliarity: string;
 }
 
-interface SessionRow {
-  id: string;
-  studyPhase: string;
-  sequence: string;
-  status: string;
-  currentPosition: number;
-  viewportClass: string;
-  createdAt: number;
-  completedAt: number | null;
-  lastActivityAt: number;
-  completedTrials: number;
-  scoredTrials: number;
-  helpOpened: number;
-}
-
-interface ContactRow {
-  id: string;
-  kind: string;
-  email: string;
-  sessionId: string | null;
-  studyPhase: string;
-  consentedAt: number;
-}
-
 interface SurveySummaryRow {
   interfaceId: string;
   responseCount: number;
@@ -61,26 +37,10 @@ interface SurveySummaryRow {
   commentCount: number;
 }
 
-interface SurveyResponseRow {
-  id: string;
-  sessionId: string;
-  studyPhase: string;
+interface ClickSummaryRow {
   interfaceId: string;
-  sequence: string;
-  ease: number | null;
-  confidence: number | null;
-  comment: string;
-  submittedAt: number;
-}
-
-interface ClickAuditRow {
-  id: string;
-  sessionId: string;
-  studyPhase: string;
-  interfaceId: string | null;
-  taskId: string | null;
-  occurredAt: number;
-  payload: string | null;
+  totalClicks: number;
+  observedSessions: number;
 }
 
 interface PhaseRow {
@@ -104,7 +64,9 @@ export async function GET(request: Request): Promise<Response> {
       AND COALESCE((SELECT MAX(e.occurred_at) FROM study_events e WHERE e.session_id = study_sessions.id), created_at) <= ?`)
     .bind(activePhase, inactivityCutoff)
     .run();
-  const [availablePhases, summary, interfaces, sequences, profiles, sessions, contacts, surveySummary, surveyResponses, clickAudit] = await Promise.all([
+  // This endpoint is public, so it returns aggregates only. Participant-level rows (sessions,
+  // emails, comments, click traces) are deliberately never queried here.
+  const [availablePhases, summary, interfaces, sequences, profiles, surveySummary, clickSummary] = await Promise.all([
     db.prepare(`SELECT
       study_phase AS studyPhase,
       COUNT(*) AS totalSessions,
@@ -144,36 +106,6 @@ export async function GET(request: Request): Promise<Response> {
       WHERE (? IS NULL OR study_phase = ?)
       ORDER BY created_at DESC`).bind(selectedPhase, selectedPhase).all<ProfileRow>(),
     db.prepare(`SELECT
-      s.id,
-      s.study_phase AS studyPhase,
-      s.sequence,
-      s.status,
-      s.current_position AS currentPosition,
-      s.device_class AS viewportClass,
-      s.created_at AS createdAt,
-      s.completed_at AS completedAt,
-      COALESCE((SELECT MAX(e.occurred_at) FROM study_events e WHERE e.session_id = s.id), s.created_at) AS lastActivityAt,
-      (SELECT COUNT(*) FROM study_trials t WHERE t.session_id = s.id AND t.status = 'complete') AS completedTrials,
-      (SELECT COUNT(*) FROM study_trials t WHERE t.session_id = s.id AND t.is_practice = 0) AS scoredTrials,
-      CASE WHEN EXISTS (
-        SELECT 1 FROM study_events e WHERE e.session_id = s.id AND e.event_type = 'help_opened_session'
-      ) THEN 1 ELSE 0 END AS helpOpened
-      FROM study_sessions s
-      WHERE (? IS NULL OR s.study_phase = ?)
-      ORDER BY CASE WHEN s.status = 'active' THEN 0 ELSE 1 END, lastActivityAt DESC
-      LIMIT 40`).bind(selectedPhase, selectedPhase).all<SessionRow>(),
-    db.prepare(`SELECT
-      id,
-      kind,
-      email,
-      session_id AS sessionId,
-      study_phase AS studyPhase,
-      consented_at AS consentedAt
-      FROM study_contact_opt_ins
-      WHERE (? IS NULL OR study_phase = ?)
-      ORDER BY consented_at DESC
-      LIMIT 200`).bind(selectedPhase, selectedPhase).all<ContactRow>(),
-    db.prepare(`SELECT
       t.interface_id AS interfaceId,
       COUNT(*) AS responseCount,
       AVG(t.ease_rating) AS averageEase,
@@ -188,34 +120,14 @@ export async function GET(request: Request): Promise<Response> {
       GROUP BY t.interface_id
       ORDER BY t.interface_id`).bind(selectedPhase, selectedPhase).all<SurveySummaryRow>(),
     db.prepare(`SELECT
-      t.id,
-      t.session_id AS sessionId,
-      s.study_phase AS studyPhase,
-      t.interface_id AS interfaceId,
-      s.sequence,
-      t.ease_rating AS ease,
-      t.confidence_rating AS confidence,
-      COALESCE(t.comment, '') AS comment,
-      t.updated_at AS submittedAt
-      FROM study_trials t
-      INNER JOIN study_sessions s ON s.id = t.session_id
-      WHERE (? IS NULL OR s.study_phase = ?)
-        AND (t.ease_rating IS NOT NULL OR t.confidence_rating IS NOT NULL OR LENGTH(TRIM(COALESCE(t.comment, ''))) > 0)
-      ORDER BY t.updated_at DESC
-      LIMIT 300`).bind(selectedPhase, selectedPhase).all<SurveyResponseRow>(),
-    db.prepare(`SELECT
-      e.id,
-      e.session_id AS sessionId,
-      s.study_phase AS studyPhase,
       e.interface_id AS interfaceId,
-      e.task_id AS taskId,
-      e.occurred_at AS occurredAt,
-      e.payload
+      COUNT(*) AS totalClicks,
+      COUNT(DISTINCT e.session_id) AS observedSessions
       FROM study_events e
       INNER JOIN study_sessions s ON s.id = e.session_id
-      WHERE (? IS NULL OR s.study_phase = ?) AND e.event_type = 'click_audit'
-      ORDER BY e.occurred_at DESC
-      LIMIT 2000`).bind(selectedPhase, selectedPhase).all<ClickAuditRow>(),
+      WHERE (? IS NULL OR s.study_phase = ?) AND e.event_type = 'click_audit' AND e.interface_id IS NOT NULL
+      GROUP BY e.interface_id
+      ORDER BY e.interface_id`).bind(selectedPhase, selectedPhase).all<ClickSummaryRow>(),
   ]);
 
   return Response.json({
@@ -236,6 +148,7 @@ export async function GET(request: Request): Promise<Response> {
     sequences: sequences.results ?? [],
     profileAnalytics: summarizeProfiles(profiles.results ?? []),
     surveySummary: (surveySummary.results ?? []).map(normalizeSurveySummary),
+    clickSummary: (clickSummary.results ?? []).map(normalizeClickSummary),
   }, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -305,16 +218,17 @@ function normalizeSurveySummary(row: SurveySummaryRow) {
   };
 }
 
-function nullableNumber(value: number | null): number | null {
-  return value === null || value === undefined ? null : Number(value);
+function normalizeClickSummary(row: ClickSummaryRow) {
+  const totalClicks = Number(row.totalClicks ?? 0);
+  const observedSessions = Number(row.observedSessions ?? 0);
+  return {
+    interfaceId: row.interfaceId,
+    totalClicks,
+    observedSessions,
+    averageClicks: observedSessions ? totalClicks / observedSessions : null,
+  };
 }
 
-function parseClickPayload(value: string | null): Record<string, unknown> {
-  if (!value) return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-  } catch {
-    return {};
-  }
+function nullableNumber(value: number | null): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
