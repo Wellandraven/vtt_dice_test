@@ -27,11 +27,21 @@ export interface D1Database {
 let client: Client | undefined;
 let schemaReadiness: Promise<void> | undefined;
 
+// Env values pasted into a hosting dashboard often carry stray whitespace or the quotes from
+// .env.example; either makes libSQL reject the URL or token.
+function cleanEnv(value: string | undefined): string | undefined {
+  const cleaned = value?.trim().replace(/^(["'])(.*)\1$/, "$2").trim();
+  return cleaned || undefined;
+}
+
 function getClient(): Client {
-  client ??= createClient({
-    url: process.env.TURSO_DATABASE_URL ?? "file:local.db",
-    authToken: process.env.TURSO_AUTH_TOKEN,
-  });
+  if (client) return client;
+  const url = cleanEnv(process.env.TURSO_DATABASE_URL);
+  const hosted = Boolean(process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  // A local SQLite file is only for development; hosted functions have a read-only disk, so
+  // falling back there would fail later with an obscure SQLITE_CANTOPEN.
+  if (!url && hosted) throw new Error("TURSO_DATABASE_URL is not set in the hosting environment.");
+  client = createClient({ url: url ?? "file:local.db", authToken: cleanEnv(process.env.TURSO_AUTH_TOKEN) });
   return client;
 }
 
