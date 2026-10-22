@@ -4,7 +4,7 @@ import type { DieSides, TrayPicks } from "../engine/tray.js";
 export const INTERFACES = ["A", "B", "C"] as const;
 export type InterfaceId = (typeof INTERFACES)[number];
 
-export const STUDY_PHASE = "single-interface-balanced-v15";
+export const STUDY_PHASE = "single-interface-balanced-v16";
 export const LIVE_STUDY_PHASE = `${STUDY_PHASE}-live`;
 
 export const STUDY_SEQUENCES = ["A-B-C", "A-C-B", "B-A-C", "B-C-A", "C-A-B", "C-B-A"] as const;

@@ -645,7 +645,7 @@ export default function VariantAPreview({ previewInterface }: { previewInterface
           {!isRating && <div className="help-accordion">
             <button className="help-button" type="button" onClick={openHelp} aria-expanded={helpOpen} aria-controls="task-help-content"><span>Task help</span><span className="help-chevron" aria-hidden="true">›</span></button>
             <div className="help-content" id="task-help-content" hidden={!helpOpen}>
-              <p className="hint">Complete the target roll using the controls provided. <b>Hold</b> Roll to shake the cup, then release to pour.</p>
+              <p className="hint">Complete the target roll using the controls provided, then click <b>Roll the dice</b>.</p>
               <p className="hint" id="rail-character" />
               <div className="preview-note"><span aria-hidden="true">●</span>Anonymous development session. Practice is stored separately and excluded from the primary metric.</div>
             </div>
@@ -666,7 +666,7 @@ export default function VariantAPreview({ previewInterface }: { previewInterface
           <div id="dice-mode-block"><span className="dice-label">Advantage</span><div className="dice-row" id="dice-mode-row" /></div>
           <div id="dice-modifier-block"><span className="dice-label">Modifier</span><span id="dice-modifier-value" aria-live="polite">Current modifier +0</span><div className="dice-row" id="dice-modifier-row" /></div>
           <span id="dice-panel-line">Nothing thrown yet.</span>
-          <div id="dice-actions"><button id="dice-reset" type="button">Reset</button><button id="dice-roll" type="button">Hold to roll</button></div>
+          <div id="dice-actions"><button id="dice-reset" type="button">Reset</button><button id="dice-roll" type="button">Roll the dice</button></div>
           <button id="dice-clear" type="button">Clear dice</button>
         </section>
       </main>

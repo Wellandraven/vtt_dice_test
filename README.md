@@ -2,8 +2,8 @@
 
 The dice roller from a virtual-tabletop map project, extracted so it can be user-tested on its own.
 
-Pick dice, hold the Roll button to shake them in a cup, let go to tip them into a felt tray, and
-read what they landed on. That is the whole app.
+Pick dice, click **Roll the dice** to throw them into a felt tray, and read what they landed on.
+That is the whole app.
 
 ```
 npm install -g netlify-cli   # once per machine
@@ -50,16 +50,12 @@ Needs a browser with WebGL and, for sound, a real user gesture (which the Roll b
 **Most of this is not guessable from looking at it**, so it is worth reading before you put it in
 front of anybody.
 
-- **Roll is press-and-hold, not click.** Pressing puts the dice in a cup; holding shakes it;
-  releasing tips them out. A quick tap is just a very short hold — there is a floor (`MIN_SHAKE`)
-  so a click cannot produce dice that were never in motion.
-- **The button fills while you hold it.** That is the ten-second limit (`SHAKE_LIMIT`) becoming
-  visible. Reach the end and it pours for you.
-- **The roll is decided the instant you press**, before a single shake step runs. Nothing about how
-  long or how hard you hold can change it, and the panel prints the total on release — before the
-  dice have physically landed. That is deliberate: the roll is a fact from the moment of the press,
-  and holding the number back until the felt agreed would be pretending the animation decided
-  something. Testers often assume the opposite, and it is worth watching whether they do.
+- **Roll is one click.** **Roll the dice** throws the handful straight onto the felt — no cup and no
+  hold. (Study phases up to v15 used a press-and-hold cup shake; that code is still in
+  `renderer/diceFx.ts` and `cupMath.ts` but nothing calls it. v16 is the first one-click phase.)
+- **The roll is decided the instant you click**, before the dice leave the hand; the animation
+  cannot change it. The panel says "Rolling…" while they tumble and prints the total once they have
+  settled. The button is disabled until then, so a double-click cannot roll twice.
 - **In Interface A, right-click a die button to take one away.** There is no minus button — fourteen controls in a
   232px panel was judged a worse trade than an affordance that has to be discovered. Reset is
   always there for anyone who does not find it. **This is a good thing to watch in testing.**
@@ -71,7 +67,7 @@ front of anybody.
 - **Size (1×/2×/3×) cannot change a roll.** With dice on the felt, picking a size re-throws *the
   same seed*, so the faces and total are identical and only the size and bounce differ. With
   nothing thrown yet it throws a sample handful and deliberately does not record it as a result.
-- **Keyboard works the same way**: Tab to Roll, then hold Enter or Space.
+- **Keyboard works the same way**: Tab to Roll the dice, then press Enter or Space.
 
 ## The Modifier row
 
@@ -85,7 +81,7 @@ additive mental model of the dice row and removes the need to infer a number fro
 Interface B keeps every die visible but places dedicated `−` and `+` controls beneath it, with the
 current count beside the die name. It removes Interface A's right-click dependency and makes adding
 and undoing dice equally explicit on mouse, keyboard, and touch. Modifier, Advantage, dice size,
-sound, the hold-to-roll gesture, physics, and result presentation are unchanged.
+sound, the one-click roll, physics, and result presentation are unchanged.
 
 ## Interface C: horizontal bottom toolbar
 

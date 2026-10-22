@@ -966,15 +966,8 @@ input {
 #dice-roll {
   border-color: #4cba51 !important;
   color: #071a09 !important;
-  background: linear-gradient(
-    to right,
-    #78d87c 0,
-    #78d87c calc(var(--shake, 0) * 100%),
-    #4cba51 calc(var(--shake, 0) * 100%),
-    #4cba51 100%
-  ) !important;
+  background: #4cba51 !important;
   user-select: none;
-  touch-action: none;
 }
 
 #dice-roll:disabled {

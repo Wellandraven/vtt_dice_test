@@ -823,11 +823,13 @@ export class DiceStage {
    * **Replacing rather than adding**, because a tray that accumulated would bury the last roll —
    * which is the one you want to read — under every roll before it.
    */
-  throwDice(faces: ReadonlyArray<{ sides: number; face: number }>, seed: number, size?: DiceSize): void {
-    // No cup on this path — see `showSize`, its only caller. A settings click should not cost two
+  throwDice(faces: ReadonlyArray<{ sides: number; face: number }>, seed: number, size?: DiceSize): Promise<void> {
+    // No cup on this path — see `showSize` and `rollDice`, its callers. A click should not cost two
     // seconds of animation. The dice still land, and landing is what makes the sound.
+    //
+    // Resolves once the throw has actually started, which on the first roll waits for the models.
     this.audio.start();
-    void this.ready().then(() => {
+    return this.ready().then(() => {
       const starts = this.begin(faces, seed, size);
       this.path = simulateThrow(starts, TRAY);
       this.elapsed = 0;

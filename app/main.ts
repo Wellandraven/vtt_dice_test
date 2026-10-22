@@ -1,4 +1,4 @@
-import { DiceStage, SHAKE_LIMIT } from "../renderer/diceFx.js";
+import { DiceStage } from "../renderer/diceFx.js";
 import { rerollSeed } from "../engine/dice.js";
 import { DICE, allowsAdvantage, rollTray, total as trayTotal, type TrayRoll } from "../engine/tray.js";
 import {
@@ -35,7 +35,7 @@ import {
 //  2. `syncDicePanel` gated on `showsMap(state.mode) && renderedYet()`, since a tray floating over
 //     the app's character Forge would be sitting on a screen with no map under it. There is nothing
 //     but the tray here, so the gate is gone.
-//  3. `stopShaking` ended by calling `resolvePendingWish(roll)`. That is the jinn — a d20 the app
+//  3. The roll commit (then `stopShaking`) ended by calling `resolvePendingWish(roll)`. That is the jinn — a d20 the app
 //     rolls on your behalf against a table of seventy-one wishes — reaching into the one place
 //     every roll is committed. It is the only thing outside the dice that touched this path, it
 //     only ever pointed inward, and it is gone.
@@ -280,7 +280,7 @@ function rowButton(label: string, onClick: () => void, control = label): HTMLBut
 
 /** The rail's line, which is what is left once the panel is dismissed. */
 function renderDiceSection(): void {
-  const rolling = Boolean(shakingRoll || pendingRoll);
+  const rolling = Boolean(pendingRoll);
   const line = rolling ? "Rolling…" : trayLine(tray.last);
   dicePanelLine.textContent = line;
   diceResultEl.textContent = line;
@@ -326,15 +326,13 @@ function announcePanelVisibility(): void {
 }
 
 /**
- * The roll that has already happened, while it is still being shaken.
+ * The roll that has already happened, while its dice are still tumbling.
  *
- * **The number is decided the moment you press, before a single shake step runs**, and it waits here
- * until you let go. Nothing about the hold can reach it — which is the same rule engine/dice.ts
- * opens with, applied to the one interaction that would otherwise be able to break it. It stays out
- * of `tray.last` until the release, so the panel does not print a total for dice that are still
- * rattling.
+ * **The number is decided the moment Roll is clicked**, before the dice leave anybody's hand, and
+ * nothing about the animation can reach it — the same rule engine/dice.ts opens with. It stays out
+ * of `tray.last` until the dice settle, so the panel does not print a total for dice that are still
+ * moving.
  */
-let shakingRoll: { roll: TrayRoll; seed: number } | undefined;
 let pendingRoll: TrayRoll | undefined;
 
 function hideRollResultToast(): void {
@@ -347,19 +345,20 @@ function showRollResultToast(roll: TrayRoll): void {
 }
 
 /**
- * Press: roll it now, then start shaking a cup of dice that already know what they are going to say.
+ * Click: roll it now, then throw dice that already know what they are going to say.
  *
- * The press is also the gesture the sound needs to wake up in — a browser will not start an audio
- * context outside one — which is why `DiceStage.shake` opens by doing that rather than waiting for
- * the pour, a second and a half later and out of any gesture at all.
+ * The click is also the gesture the sound needs to wake up in — a browser will not start an audio
+ * context outside one — which `DiceStage.throwDice` does before anything else.
  */
-function startShaking(): void {
-  if (trayTotal(tray.picks) === 0 || shakingRoll || pendingRoll) return;
+function rollDice(): void {
+  if (trayTotal(tray.picks) === 0 || pendingRoll) return;
   const seed = rerollSeed(tray.seed);
   const modifier = tray.modifier;
-  shakingRoll = { roll: rollTray(tray.picks, seed, { modifier, mode: tray.mode }), seed };
+  const roll = rollTray(tray.picks, seed, { modifier, mode: tray.mode });
+  pendingRoll = roll;
+  tray = { ...tray, seed };
   hideRollResultToast();
-  renderDiceSection();
+  renderDicePanel();
   noteInteraction("roll");
   emitStudyEvent("roll-initiated", {
     picks: { ...tray.picks },
@@ -367,29 +366,19 @@ function startShaking(): void {
     modifier,
   });
   showTray();
-  diceStage().shake(shakingRoll.roll.dice, seed, tray.size);
-  watchShake();
-}
-
-/**
- * Let go: preserve the already-decided roll while the cup pours it out. The visible result is held
- * back until the renderer reports that the dice, cup, and camera have all finished moving.
- */
-function stopShaking(): void {
-  const shaking = shakingRoll;
-  if (!shaking) return;
-  shakingRoll = undefined;
-  pendingRoll = shaking.roll;
-  tray = { ...tray, seed: shaking.seed };
-  renderDicePanel();
-  diceStage().release();
-  watchAnimationCompletion();
+  // The first throw waits on the tray models, so the stage is not busy yet when this returns.
+  // Watching only once the throw has actually started keeps the result from appearing early. A throw
+  // that fails to start still settles the roll, so the button can never stay stuck on "Rolling…".
+  const generation = ++animationGeneration;
+  void diceStage()
+    .throwDice(roll.dice, seed, tray.size)
+    .catch(() => undefined)
+    .then(() => watchAnimationCompletion(generation));
 }
 
 let animationGeneration = 0;
 
-function watchAnimationCompletion(): void {
-  const generation = ++animationGeneration;
+function watchAnimationCompletion(generation: number): void {
   const frame = () => {
     if (generation !== animationGeneration) return;
     if (diceStage().busy) {
@@ -409,46 +398,18 @@ function watchAnimationCompletion(): void {
 }
 
 /**
- * Abandon a shake without rolling — the panel keeps saying whatever it said before.
+ * Abandon a roll in flight — the panel keeps saying whatever it said before.
  *
- * **The felt is swept as well as the intent dropped.** A shake left running is a rAF loop with
- * nobody holding the button and a cup hanging mid-pour. `clear` takes both, and it is safe when
- * there was no shake: sweeping an empty tray is what Clear dice does anyway.
+ * **The felt is swept as well as the intent dropped.** `clear` stops the throw, and it is safe when
+ * nothing was rolling: sweeping an empty tray is what Clear dice does anyway.
  */
-function abandonShake(): void {
+function abandonRoll(): void {
   animationGeneration += 1;
-  const wasRolling = Boolean(shakingRoll || pendingRoll);
-  shakingRoll = undefined;
+  const wasRolling = Boolean(pendingRoll);
   pendingRoll = undefined;
-  diceRollButton.style.removeProperty("--shake");
   diceStageFx?.clear();
   hideRollResultToast();
   if (wasRolling) renderDicePanel();
-}
-
-/**
- * Fill the button while it is held, and pour for them at the limit.
- *
- * **A loop of its own here rather than a callback out of the renderer**, so the DOM stays in this
- * file and `DiceStage` stays free of it. It also keeps the decision to throw in one place: whether
- * it came from a finger or from the clock, it is this file that commits the roll.
- */
-function watchShake(): void {
-  const frame = () => {
-    if (!shakingRoll) {
-      diceRollButton.style.removeProperty("--shake");
-      return;
-    }
-    const held = diceStage().shakeSeconds;
-    diceRollButton.style.setProperty("--shake", `${Math.min(1, held / SHAKE_LIMIT)}`);
-    if (held >= SHAKE_LIMIT) {
-      stopShaking();
-      diceRollButton.style.removeProperty("--shake");
-      return;
-    }
-    requestAnimationFrame(frame);
-  };
-  frame();
 }
 
 /** A handful thrown only to show off a size, when there is no real roll to re-throw. */
@@ -469,8 +430,8 @@ const SAMPLE_SEED = 606;
  */
 function showSize(): void {
   showTray();
-  if (tray.last) diceStage().throwDice(tray.last.dice, tray.seed, tray.size);
-  else diceStage().throwDice(rollTray(SAMPLE_PICKS, SAMPLE_SEED).dice, SAMPLE_SEED, tray.size);
+  if (tray.last) void diceStage().throwDice(tray.last.dice, tray.seed, tray.size);
+  else void diceStage().throwDice(rollTray(SAMPLE_PICKS, SAMPLE_SEED).dice, SAMPLE_SEED, tray.size);
 }
 
 /**
@@ -537,7 +498,7 @@ function showTray(): void {
 
 /** Sweep the felt and put the tray away. Both the button and a click on the tray come here. */
 function clearTray(): void {
-  abandonShake();
+  abandonRoll();
   diceStageFx?.clear();
   diceStageEl.hidden = true;
 }
@@ -579,35 +540,9 @@ diceResetButton.addEventListener("click", () => {
   tray = resetTray(tray);
   renderDicePanel();
 });
-// **Hold to shake, let go to throw**, and a tap is just a very short hold — see MIN_SHAKE, which is
-// what stops a click producing dice that were never in motion.
-//
-// The pointer is captured on the way down so the release is heard wherever the cursor has wandered
-// to; without it, pressing the button and letting go somewhere else leaves a shake running with
-// nobody holding it.
-diceRollButton.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0) return;
-  event.preventDefault();
-  diceRollButton.setPointerCapture(event.pointerId);
-  startShaking();
-});
-diceRollButton.addEventListener("pointerup", stopShaking);
-// A cancelled pointer is not a release — the gesture was taken away rather than finished, so the
-// dice go back in the cup rather than being thrown on somebody's behalf.
-diceRollButton.addEventListener("pointercancel", abandonShake);
-// **Keyboard is the same two events, not a special case.** Enter and Space repeat while held, so
-// the repeats are ignored and only the first press starts anything.
-diceRollButton.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" && event.key !== " ") return;
-  event.preventDefault();
-  if (!event.repeat) startShaking();
-});
-diceRollButton.addEventListener("keyup", (event) => {
-  if (event.key === "Enter" || event.key === " ") stopShaking();
-});
-// Both paths above already did the work; the click a button synthesises afterwards would be a
-// second roll from one press.
-diceRollButton.addEventListener("click", (event) => event.preventDefault());
+// **One click rolls.** A button's click already covers mouse, touch, Enter and Space, and a second
+// click while the dice are still moving is ignored by `rollDice` itself.
+diceRollButton.addEventListener("click", rollDice);
 // **The setting is written whether or not the stage exists yet**, because the panel opens long
 // before anything has been rolled and the stage is built lazily on the first one. `diceStage()`
 // reads it back on the way up rather than this reaching in to create a WebGL context for a mute.
@@ -645,7 +580,7 @@ window.addEventListener("dice-lab:set-interface", (event) => {
 window.addEventListener("dice-lab:prepare-task", (event) => {
   const detail = (event as CustomEvent<Partial<Pick<DiceTray, "picks" | "mode" | "modifier" | "open">> & { interfaceId?: unknown }>).detail ?? {};
   setActiveInterface(detail.interfaceId);
-  abandonShake();
+  abandonRoll();
   const picks = detail.picks ?? {};
   tray = {
     ...tray,
