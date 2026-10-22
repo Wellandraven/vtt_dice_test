@@ -17,8 +17,8 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@libsql/client": "^0.18.0",
-    "drizzle-orm": "0.45.2",
+    "@netlify/database": "^2.0.1",
+    "drizzle-orm": "^1.0.0-beta.22",
     "next": "16.3.3",
     "react": "19.2.6",
     "react-dom": "19.2.6",
@@ -29,7 +29,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@types/three": "^0.185.1",
-    "drizzle-kit": "0.31.10",
+    "drizzle-kit": "^1.0.0-beta.22",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.3",
     "typescript": "5.9.3",

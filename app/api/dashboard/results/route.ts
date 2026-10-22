@@ -68,64 +68,64 @@ export async function GET(request: Request): Promise<Response> {
   // emails, comments, click traces) are deliberately never queried here.
   const [availablePhases, summary, interfaces, sequences, profiles, surveySummary, clickSummary] = await Promise.all([
     db.prepare(`SELECT
-      study_phase AS studyPhase,
-      COUNT(*) AS totalSessions,
-      SUM(CASE WHEN status = 'development_complete' THEN 1 ELSE 0 END) AS completedSessions,
-      MIN(created_at) AS earliestAt,
-      MAX(created_at) AS latestAt
+      study_phase AS "studyPhase",
+      COUNT(*) AS "totalSessions",
+      SUM(CASE WHEN status = 'development_complete' THEN 1 ELSE 0 END) AS "completedSessions",
+      MIN(created_at) AS "earliestAt",
+      MAX(created_at) AS "latestAt"
       FROM study_sessions
       GROUP BY study_phase
-      ORDER BY latestAt DESC`).all<PhaseRow>(),
+      ORDER BY "latestAt" DESC`).all<PhaseRow>(),
     db.prepare(`SELECT
-      COUNT(*) AS totalSessions,
-      SUM(CASE WHEN status = 'development_complete' THEN 1 ELSE 0 END) AS completedSessions,
-      SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS activeSessions,
+      COUNT(*) AS "totalSessions",
+      SUM(CASE WHEN status = 'development_complete' THEN 1 ELSE 0 END) AS "completedSessions",
+      SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS "activeSessions",
       SUM(CASE WHEN EXISTS (
         SELECT 1 FROM study_events e WHERE e.session_id = s.id AND e.event_type = 'help_opened_session'
-      ) THEN 1 ELSE 0 END) AS helpOpeners
-      FROM study_sessions s WHERE (? IS NULL OR s.study_phase = ?)`).bind(selectedPhase, selectedPhase).first<SummaryRow>(),
+      ) THEN 1 ELSE 0 END) AS "helpOpeners"
+      FROM study_sessions s WHERE (?::text IS NULL OR s.study_phase = ?)`).bind(selectedPhase, selectedPhase).first<SummaryRow>(),
     db.prepare(`SELECT
-      t.interface_id AS interfaceId,
-      SUM(CASE WHEN t.status = 'complete' AND t.is_practice = 0 THEN 1 ELSE 0 END) AS completedTrials,
-      AVG(CASE WHEN t.status = 'complete' AND t.is_practice = 0 THEN t.elapsed_ms END) AS averageElapsedMs,
-      AVG(CASE WHEN t.status = 'complete' AND t.is_practice = 0 THEN t.invalid_attempts END) AS averageInvalidAttempts,
-      AVG(CASE WHEN t.is_practice = 0 THEN t.ease_rating END) AS averageEase,
-      AVG(CASE WHEN t.is_practice = 0 THEN t.confidence_rating END) AS averageConfidence,
-      SUM(CASE WHEN t.is_practice = 0 AND t.help_opened = 1 THEN 1 ELSE 0 END) AS helpTrials
+      t.interface_id AS "interfaceId",
+      SUM(CASE WHEN t.status = 'complete' AND t.is_practice = 0 THEN 1 ELSE 0 END) AS "completedTrials",
+      AVG(CASE WHEN t.status = 'complete' AND t.is_practice = 0 THEN t.elapsed_ms END) AS "averageElapsedMs",
+      AVG(CASE WHEN t.status = 'complete' AND t.is_practice = 0 THEN t.invalid_attempts END) AS "averageInvalidAttempts",
+      AVG(CASE WHEN t.is_practice = 0 THEN t.ease_rating END) AS "averageEase",
+      AVG(CASE WHEN t.is_practice = 0 THEN t.confidence_rating END) AS "averageConfidence",
+      SUM(CASE WHEN t.is_practice = 0 AND t.help_opened = 1 THEN 1 ELSE 0 END) AS "helpTrials"
       FROM study_trials t
       INNER JOIN study_sessions s ON s.id = t.session_id
-      WHERE (? IS NULL OR s.study_phase = ?) GROUP BY t.interface_id ORDER BY t.interface_id`).bind(selectedPhase, selectedPhase).all<InterfaceRow>(),
+      WHERE (?::text IS NULL OR s.study_phase = ?) GROUP BY t.interface_id ORDER BY t.interface_id`).bind(selectedPhase, selectedPhase).all<InterfaceRow>(),
     db.prepare(`SELECT SUBSTR(sequence, 1, 1) AS sequence, COUNT(*) AS sessions FROM study_sessions
-      WHERE (? IS NULL OR study_phase = ?) GROUP BY SUBSTR(sequence, 1, 1) ORDER BY sequence`).bind(selectedPhase, selectedPhase).all<SequenceRow>(),
+      WHERE (?::text IS NULL OR study_phase = ?) GROUP BY SUBSTR(sequence, 1, 1) ORDER BY sequence`).bind(selectedPhase, selectedPhase).all<SequenceRow>(),
     db.prepare(`SELECT
-      vtt_tools AS vttTools,
-      vtt_other AS vttOther,
-      vtt_comfort AS vttComfort,
-      dice_familiarity AS diceFamiliarity
+      vtt_tools AS "vttTools",
+      vtt_other AS "vttOther",
+      vtt_comfort AS "vttComfort",
+      dice_familiarity AS "diceFamiliarity"
       FROM study_sessions
-      WHERE (? IS NULL OR study_phase = ?)
+      WHERE (?::text IS NULL OR study_phase = ?)
       ORDER BY created_at DESC`).bind(selectedPhase, selectedPhase).all<ProfileRow>(),
     db.prepare(`SELECT
-      t.interface_id AS interfaceId,
-      COUNT(*) AS responseCount,
-      AVG(t.ease_rating) AS averageEase,
-      AVG(t.confidence_rating) AS averageConfidence,
-      SUM(CASE WHEN t.ease_rating >= 4 THEN 1 ELSE 0 END) AS highEaseCount,
-      SUM(CASE WHEN t.confidence_rating >= 4 THEN 1 ELSE 0 END) AS highConfidenceCount,
-      SUM(CASE WHEN LENGTH(TRIM(COALESCE(t.comment, ''))) > 0 THEN 1 ELSE 0 END) AS commentCount
+      t.interface_id AS "interfaceId",
+      COUNT(*) AS "responseCount",
+      AVG(t.ease_rating) AS "averageEase",
+      AVG(t.confidence_rating) AS "averageConfidence",
+      SUM(CASE WHEN t.ease_rating >= 4 THEN 1 ELSE 0 END) AS "highEaseCount",
+      SUM(CASE WHEN t.confidence_rating >= 4 THEN 1 ELSE 0 END) AS "highConfidenceCount",
+      SUM(CASE WHEN LENGTH(TRIM(COALESCE(t.comment, ''))) > 0 THEN 1 ELSE 0 END) AS "commentCount"
       FROM study_trials t
       INNER JOIN study_sessions s ON s.id = t.session_id
-      WHERE (? IS NULL OR s.study_phase = ?)
+      WHERE (?::text IS NULL OR s.study_phase = ?)
         AND (t.ease_rating IS NOT NULL OR t.confidence_rating IS NOT NULL OR LENGTH(TRIM(COALESCE(t.comment, ''))) > 0)
       GROUP BY t.interface_id
       ORDER BY t.interface_id`).bind(selectedPhase, selectedPhase).all<SurveySummaryRow>(),
     db.prepare(`SELECT
-      e.interface_id AS interfaceId,
-      COUNT(*) AS totalClicks,
-      COUNT(DISTINCT e.session_id) AS observedSessions
+      e.interface_id AS "interfaceId",
+      COUNT(*) AS "totalClicks",
+      COUNT(DISTINCT e.session_id) AS "observedSessions"
       FROM study_events e
       INNER JOIN study_sessions s ON s.id = e.session_id
-      WHERE (? IS NULL OR s.study_phase = ?) AND e.event_type = 'click_audit' AND e.interface_id IS NOT NULL
+      WHERE (?::text IS NULL OR s.study_phase = ?) AND e.event_type = 'click_audit' AND e.interface_id IS NOT NULL
       GROUP BY e.interface_id
       ORDER BY e.interface_id`).bind(selectedPhase, selectedPhase).all<ClickSummaryRow>(),
   ]);

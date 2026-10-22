@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
 
     await ensureStudySchema();
     const db = getD1();
-    const session = await db.prepare(`SELECT id, study_phase AS studyPhase FROM study_sessions
+    const session = await db.prepare(`SELECT id, study_phase AS "studyPhase" FROM study_sessions
       WHERE id = ? AND status = 'development_complete' LIMIT 1`)
       .bind(sessionId)
       .first<{ id: string; studyPhase: string }>();

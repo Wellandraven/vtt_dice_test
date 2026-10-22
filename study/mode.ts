@@ -14,7 +14,7 @@ export interface StudyMode {
 
 export async function getStudyMode(): Promise<StudyMode> {
   const row = await getD1().prepare(
-    "SELECT is_live AS isLive, launched_at AS launchedAt FROM study_admin_state WHERE id = 1",
+    `SELECT is_live AS "isLive", launched_at AS "launchedAt" FROM study_admin_state WHERE id = 1`,
   ).first<StudyModeRow>();
   const live = Number(row?.isLive ?? 0) === 1;
   return {

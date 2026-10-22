@@ -125,7 +125,7 @@ export async function GET(request: Request): Promise<Response> {
     const db = getD1();
     const session = await db
       .prepare(`SELECT id, sequence, status,
-        COALESCE((SELECT MAX(e.occurred_at) FROM study_events e WHERE e.session_id = study_sessions.id), created_at) AS lastActivityAt
+        COALESCE((SELECT MAX(e.occurred_at) FROM study_events e WHERE e.session_id = study_sessions.id), created_at) AS "lastActivityAt"
         FROM study_sessions WHERE id = ? LIMIT 1`)
       .bind(id)
       .first<SessionRow>();
@@ -136,8 +136,8 @@ export async function GET(request: Request): Promise<Response> {
     }
 
     const trials = await db
-      .prepare(`SELECT interface_id AS interfaceId, task_id AS taskId, status, ease_rating AS easeRating,
-        confidence_rating AS confidenceRating, comment
+      .prepare(`SELECT interface_id AS "interfaceId", task_id AS "taskId", status, ease_rating AS "easeRating",
+        confidence_rating AS "confidenceRating", comment
         FROM study_trials WHERE session_id = ? AND interface_id IN (?, ?, ?) ORDER BY created_at`)
       .bind(id, ...DEVELOPMENT_INTERFACES)
       .all<TrialRow>();

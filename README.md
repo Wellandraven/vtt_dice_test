@@ -13,11 +13,13 @@ npm run typecheck
 npm run build    # Next.js production build (webpack)
 ```
 
-The app is a Next.js App Router project hosted on Netlify, with study data in Turso (hosted
-libSQL/SQLite). Locally, with no `TURSO_DATABASE_URL` set, it uses a `local.db` SQLite file.
-Copy `.env.example` to `.env.local` for local settings. On Netlify, set `TURSO_DATABASE_URL`,
-`TURSO_AUTH_TOKEN`, `DASHBOARD_PASSWORD` and a separate long `DASHBOARD_SESSION_SECRET` under
-Site configuration → Environment variables. Every push to `main` redeploys.
+The app is a Next.js App Router project hosted on Netlify, with study data in Netlify Database
+(managed Postgres). The tables are defined in `db/schema.ts`; migrations live in
+`netlify/database/migrations` and are applied automatically on each deploy (regenerate them with
+`npm run db:generate -- --name <change>` after a schema change). Use `netlify dev` locally to get a
+development database. On Netlify, set `DASHBOARD_PASSWORD` and a separate long
+`DASHBOARD_SESSION_SECRET` under Site configuration → Environment variables. Every push to `main`
+redeploys.
 
 The results dashboard is available at `/dashboard`. Dashboard sessions expire after eight hours;
 the admin actions (launch, clear QA data) require the signed HTTP-only cookie.

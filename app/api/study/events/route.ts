@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
     const db = getD1();
     const session = await db
       .prepare(`SELECT sequence, status,
-        COALESCE((SELECT MAX(e.occurred_at) FROM study_events e WHERE e.session_id = study_sessions.id), created_at) AS lastActivityAt
+        COALESCE((SELECT MAX(e.occurred_at) FROM study_events e WHERE e.session_id = study_sessions.id), created_at) AS "lastActivityAt"
         FROM study_sessions WHERE id = ? LIMIT 1`)
       .bind(body.sessionId)
       .first<SessionRow>();
@@ -121,7 +121,7 @@ export async function POST(request: Request): Promise<Response> {
       await db
         .prepare(`INSERT INTO study_events (
           id, session_id, trial_id, event_type, interface_id, position, task_pack, task_id, occurred_at, payload
-        ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ) SELECT ?, ?, ?, ?, ?, ?::integer, ?::integer, ?, ?::bigint, ?
           WHERE NOT EXISTS (
             SELECT 1 FROM study_events WHERE session_id = ? AND event_type = 'help_opened_session'
           )`)
