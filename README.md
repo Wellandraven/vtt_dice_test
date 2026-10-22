@@ -6,12 +6,18 @@ Pick dice, hold the Roll button to shake them in a cup, let go to tip them into 
 read what they landed on. That is the whole app.
 
 ```
+npm install -g netlify-cli   # once per machine
 npm install
-npm run dev      # http://localhost:3000
-npm test         # 218 unit tests
+npm run db:migrate:local     # create/update tables in the local dev database
+npm run dev:netlify          # http://localhost:8888 (app + local database)
+npm test                     # 223 unit tests
 npm run typecheck
-npm run build    # Next.js production build (webpack)
+npm run build                # Next.js production build (webpack)
 ```
+
+Plain `npm run dev` starts the app without a database connection, so study and dashboard API
+calls fail; use `npm run dev:netlify`. The local database lives in `.netlify/db` (gitignored);
+`netlify db reset` empties it, after which you run `npm run db:migrate:local` again.
 
 The app is a Next.js App Router project hosted on Netlify, with study data in Netlify Database
 (managed Postgres). The tables are defined in `db/schema.ts`; migrations live in
