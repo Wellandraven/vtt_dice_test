@@ -65,7 +65,20 @@ export function emptyTray(seed: number): DiceTray {
  * that had already changed before anything noticed.
  */
 export function addDie(tray: DiceTray, sides: DieSides): DiceTray {
-  return { ...tray, picks: { ...tray.picks, [sides]: (tray.picks[sides] ?? 0) + 1 } };
+  return withApplicableMode({ ...tray, picks: { ...tray.picks, [sides]: (tray.picks[sides] ?? 0) + 1 } });
+}
+
+/**
+ * Back to Flat once Advantage no longer applies to the handful.
+ *
+ * **The roll was already flat; this makes the selection say so.** `rollTray` ignores Advantage on
+ * anything but a single d20, so a tray still marked "advantage" after the d20 became a d8 would roll
+ * flat and be *recorded* as advantage — and a study task asking for a flat d8 would mark that roll
+ * wrong, for a setting greyed out and doing nothing. Typed rolls always say their mode, so without
+ * this the buttons alone carried a hidden extra step.
+ */
+function withApplicableMode(tray: DiceTray): DiceTray {
+  return tray.mode === "flat" || allowsAdvantage(tray.picks) ? tray : { ...tray, mode: "flat" };
 }
 
 /**
@@ -79,7 +92,7 @@ export function removeDie(tray: DiceTray, sides: DieSides): DiceTray {
   const picks = { ...tray.picks };
   if (left > 0) picks[sides] = left;
   else delete picks[sides];
-  return { ...tray, picks };
+  return withApplicableMode({ ...tray, picks });
 }
 
 /** The three sizes, in the order the buttons offer them. */

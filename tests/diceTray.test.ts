@@ -46,6 +46,26 @@ describe("picking dice", () => {
     expect(removeDie(emptyTray(1), 12).picks).toEqual({});
   });
 
+  it("drops back to flat when adding a die means Advantage no longer applies", () => {
+    const advantaged = { ...addDie(emptyTray(1), 20), mode: "advantage" as const };
+    expect(addDie(advantaged, 6).mode).toBe("flat");
+    expect(addDie(advantaged, 20).mode).toBe("flat");
+  });
+
+  it("drops back to flat when removing the d20 Advantage applied to", () => {
+    // The study's recovery task: start from 1d20 with Advantage and change it to a flat 1d8.
+    const advantaged = { ...addDie(emptyTray(1), 20), mode: "disadvantage" as const };
+    const changed = addDie(removeDie(advantaged, 20), 8);
+    expect(changed.picks).toEqual({ 8: 1 });
+    expect(changed.mode).toBe("flat");
+  });
+
+  it("keeps Advantage while the tray is still a single d20", () => {
+    const advantaged = { ...addDie(emptyTray(1), 20), mode: "advantage" as const };
+    expect(removeDie(advantaged, 6).mode).toBe("advantage");
+    expect(removeDie(addDie(advantaged, 6), 6).mode).toBe("flat");
+  });
+
   it("never edits the tray it was handed", () => {
     // The whole of DemoState is replaced field by field, so a picks object edited in place would
     // be one that had already changed before anything noticed.
