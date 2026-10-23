@@ -834,6 +834,7 @@ input {
 
 .dice-label {
   margin-bottom: 5px;
+  color: #a3b1bc;
 }
 
 #dice-modifier-value {
@@ -853,9 +854,9 @@ input {
 .dice-stepper-card {
   min-width: 0;
   padding: 6px;
-  border: 1px solid #35434d;
+  border: 1px solid #5d6f7e;
   border-radius: 7px;
-  background: #141e25;
+  background: #16212a;
 }
 
 .dice-stepper-card.active {
@@ -890,10 +891,10 @@ input {
 .dice-stepper-controls button {
   min-height: 30px;
   padding: 2px;
-  border: 1px solid #45535d;
+  border: 1px solid #6c8090;
   border-radius: 5px;
   color: #eef2f5;
-  background: #202c34;
+  background: #25333e;
   font-size: 15px;
   font-weight: 800;
   cursor: pointer;
@@ -907,9 +908,10 @@ input {
 }
 
 .dice-stepper-controls button:disabled {
-  color: #53606a;
+  border-color: #3d4a54;
+  color: #8f9ca6;
+  background: #151d24;
   cursor: default;
-  opacity: 0.55;
 }
 
 .dice-row {
@@ -922,17 +924,17 @@ input {
 #dice-actions button {
   min-height: 34px;
   padding: 6px 4px;
-  border: 1px solid #3a4751;
+  border: 1px solid #66798a;
   border-radius: 6px;
-  color: #dce4ea;
-  background: #1a242c;
+  color: #e8eef2;
+  background: #202d37;
   font-size: 11px;
   cursor: pointer;
 }
 
 .dice-row button:hover,
 #dice-actions button:hover {
-  border-color: #65737c;
+  border-color: #9fb2c1;
 }
 
 .dice-row button.active {
@@ -947,21 +949,21 @@ input {
   width: 100%;
   min-height: 34px;
   padding: 6px 9px;
-  border: 1px solid #3a4751;
+  border: 1px solid #66798a;
   border-radius: 6px;
-  color: #dce4ea;
-  background: #111a21;
+  color: #e8eef2;
+  background: #1b2731;
   font: 600 13px/1.2 var(--font-sans);
   font-variant-numeric: tabular-nums;
 }
 
 #dice-notation::placeholder {
-  color: #63717b;
+  color: #9aa8b3;
   font-weight: 400;
 }
 
 #dice-notation:hover {
-  border-color: #65737c;
+  border-color: #9fb2c1;
 }
 
 #dice-notation:focus-visible {
@@ -987,10 +989,15 @@ input {
   flex: 0 1 200px;
 }
 
-.dice-row button:disabled,
-#dice-mode-block.is-off .dice-label {
-  color: #57636c;
+.dice-row button:disabled {
+  border-color: #3d4a54;
+  color: #8f9ca6;
+  background: #151d24;
   cursor: default;
+}
+
+#dice-mode-block.is-off .dice-label {
+  color: #8f9ca6;
 }
 
 #dice-panel-line {
@@ -1017,9 +1024,9 @@ input {
 }
 
 #dice-roll:disabled {
-  border-color: #35424b !important;
-  color: #64717a !important;
-  background: #182129 !important;
+  border-color: #3d4a54 !important;
+  color: #8f9ca6 !important;
+  background: #151d24 !important;
 }
 
 #dice-clear {
