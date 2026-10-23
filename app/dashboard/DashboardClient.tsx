@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 const interfacePreviews = [
   { id: "A", image: "/interface-previews/interface-a.png", href: "/preview?interface=A" },
@@ -55,6 +55,7 @@ export default function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [phaseFilter, setPhaseFilter] = useState("current");
   const [previewImage, setPreviewImage] = useState<InterfacePreviewId | null>(null);
 
@@ -78,16 +79,17 @@ export default function DashboardClient() {
   }, [loadResults]);
 
   useEffect(() => {
-    if (!analysisOpen && !previewImage) return;
+    if (!analysisOpen && !previewImage && !adminOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setAnalysisOpen(false);
         setPreviewImage(null);
+        setAdminOpen(false);
       }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [analysisOpen, previewImage]);
+  }, [analysisOpen, previewImage, adminOpen]);
 
   const selectedPreview = interfacePreviews.find((preview) => preview.id === previewImage);
 
@@ -226,10 +228,14 @@ export default function DashboardClient() {
 
         <footer className="dashboard-footer">
           <p>PDF reports contain aggregate study results only; participant-level data and written feedback are excluded.</p>
-          <button type="button" onClick={exportPdfReport} disabled={!data}>Export PDF report</button>
+          <div className="dashboard-footer-actions">
+            <button type="button" className="dashboard-admin-link" onClick={() => setAdminOpen(true)}>Admin</button>
+            <button type="button" onClick={exportPdfReport} disabled={!data}>Export PDF report</button>
+          </div>
         </footer>
       </div>
       {analysisOpen && data && <AnalysisDialog data={data} onClose={() => setAnalysisOpen(false)} />}
+      {adminOpen && <AdminDialog data={data} onClose={() => setAdminOpen(false)} onChanged={() => void loadResults()} />}
       {selectedPreview && <div className="interface-gallery-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewImage(null); }}>
         <section className="interface-gallery-dialog" role="dialog" aria-modal="true" aria-labelledby="interface-gallery-title">
           <header>
@@ -248,6 +254,125 @@ interface StudyAnalysis {
   confidence: string;
   insights: Array<{ title: string; detail: string; tone: "positive" | "neutral" | "caution" }>;
   recommendations: string[];
+}
+
+type AdminAuth = "checking" | "unconfigured" | "signed-out" | "signed-in";
+type AdminConfirm = "clear" | "launch" | null;
+
+/**
+ * Admin controls behind the dashboard password: clear QA test data, launch the live study, sign
+ * out. The server routes already enforce the signed cookie; this is only the way to reach them.
+ */
+function AdminDialog({ data, onClose, onChanged }: { data: DashboardData | null; onClose: () => void; onChanged: () => void }) {
+  const [auth, setAuth] = useState<AdminAuth>("checking");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [failure, setFailure] = useState("");
+  const [confirm, setConfirm] = useState<AdminConfirm>(null);
+
+  useEffect(() => {
+    void fetch("/api/dashboard/login", { cache: "no-store" })
+      .then((response) => response.json() as Promise<{ authenticated: boolean; configured: boolean }>)
+      .then((status) => setAuth(!status.configured ? "unconfigured" : status.authenticated ? "signed-in" : "signed-out"))
+      .catch(() => { setAuth("signed-out"); setFailure("Could not check your admin session."); });
+  }, []);
+
+  async function signIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setFailure("");
+    try {
+      const response = await fetch("/api/dashboard/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? "Sign-in failed.");
+      setPassword("");
+      setAuth("signed-in");
+    } catch (signInError) {
+      setFailure(signInError instanceof Error ? signInError.message : "Sign-in failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signOut() {
+    setBusy(true);
+    await fetch("/api/dashboard/logout", { method: "POST" }).catch(() => undefined);
+    setBusy(false);
+    setMessage("");
+    setAuth("signed-out");
+  }
+
+  async function runAction(action: "clear_qa" | "launch") {
+    setConfirm(null);
+    setBusy(true);
+    setFailure("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/dashboard/study-mode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const body = await response.json().catch(() => ({})) as { error?: string; deletedSessions?: number };
+      if (response.status === 401) {
+        setAuth("signed-out");
+        throw new Error("Your admin session expired. Sign in again.");
+      }
+      if (!response.ok) throw new Error(body.error ?? "The action failed.");
+      setMessage(action === "clear_qa"
+        ? `Cleared ${body.deletedSessions ?? 0} QA session${body.deletedSessions === 1 ? "" : "s"}.`
+        : "The study is live. New sessions are now recorded as live data.");
+      onChanged();
+    } catch (actionError) {
+      setFailure(actionError instanceof Error ? actionError.message : "The action failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const live = data?.mode === "live";
+  return <div className="analysis-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="analysis-dialog admin-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-title">
+      <header><div><span className="dashboard-eyebrow">Study admin</span><h2 id="admin-title">Admin controls</h2></div><button type="button" onClick={onClose} aria-label="Close admin controls">×</button></header>
+      <div className="admin-body">
+        {auth === "checking" && <p className="admin-note">Checking your admin session…</p>}
+        {auth === "unconfigured" && <p className="admin-note">Admin access is not configured. Set <code>DASHBOARD_PASSWORD</code> and <code>DASHBOARD_SESSION_SECRET</code> in the hosting environment variables.</p>}
+        {auth === "signed-out" && <form className="admin-form" onSubmit={signIn}>
+          <label htmlFor="admin-password">Dashboard password</label>
+          <input id="admin-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required autoFocus />
+          <button type="submit" className="admin-primary" disabled={busy || !password}>{busy ? "Signing in…" : "Sign in"}</button>
+        </form>}
+        {auth === "signed-in" && <>
+          <div className="admin-status">
+            <span className={`dashboard-live${live ? " is-live" : ""}`}><i />{live ? "Test is live" : "QA mode"}</span>
+            <small>Active phase: <code>{data?.activePhase ?? "—"}</code></small>
+          </div>
+          <article className="admin-action">
+            <div><strong>Clear QA data</strong><p>Deletes every test session recorded in QA mode for the current phase. Live data and earlier phases are never touched.</p></div>
+            <button type="button" className="admin-danger" onClick={() => setConfirm("clear")} disabled={busy}>Clear QA data</button>
+          </article>
+          {!live && <article className="admin-action">
+            <div><strong>Launch study</strong><p>Switches to live mode, so new sessions are recorded as real study data, kept separate from QA. There is no switch back from here.</p></div>
+            <button type="button" className="admin-primary" onClick={() => setConfirm("launch")} disabled={busy}>Launch study</button>
+          </article>}
+        </>}
+        {message && <p className="admin-message" role="status">{message}</p>}
+        {failure && <p className="dashboard-error" role="alert">{failure}</p>}
+      </div>
+      <footer><small>{auth === "signed-in" ? "Signed in for up to eight hours on this browser." : "Only the study owner needs this."}</small>{auth === "signed-in" ? <button type="button" onClick={signOut} disabled={busy}>Sign out</button> : <button type="button" onClick={onClose}>Close</button>}</footer>
+    </section>
+    {confirm && <div className="confirm-backdrop" role="presentation">
+      <section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="admin-confirm-title">
+        <div className="confirm-warning" aria-hidden="true">!</div>
+        <h2 id="admin-confirm-title">{confirm === "clear" ? "Delete all QA data?" : "Launch the live study?"}</h2>
+        <p>{confirm === "clear"
+          ? "Every QA test session, its events, ratings and contact opt-ins for the current phase will be permanently deleted."
+          : "From now on every new session counts as real study data. Make sure QA testing is finished and the QA data is cleared first."}</p>
+        <p className="confirm-safe-note">{confirm === "clear" ? "Live study data is not affected." : "Existing QA data is kept separately and stays out of the live results."}</p>
+        <div className="confirm-actions">
+          <button type="button" className="confirm-cancel" onClick={() => setConfirm(null)} autoFocus>Cancel</button>
+          <button type="button" className={confirm === "clear" ? "confirm-delete" : "admin-primary"} onClick={() => void runAction(confirm === "clear" ? "clear_qa" : "launch")}>{confirm === "clear" ? "Delete QA data" : "Launch study"}</button>
+        </div>
+      </section>
+    </div>}
+  </div>;
 }
 
 function AnalysisDialog({ data, onClose }: { data: DashboardData; onClose: () => void }) {
