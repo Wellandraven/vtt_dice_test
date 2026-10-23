@@ -43,7 +43,12 @@ export function parseNotation(text: string): NotationResult {
   if (!trimmed) return fail(`Type a roll first. ${EXAMPLE}`);
   if (trimmed.length > NOTATION_MAX_LENGTH) return fail(`Keep it under ${NOTATION_MAX_LENGTH} characters.`);
 
-  let body = trimmed;
+  // The study's tasks print targets as "1d20 (Adv) +1" and "1d10 −1" (a typographic minus), so a
+  // participant copying what they see must be understood: the dashes become "-", and a bracketed
+  // mode moves to the end where it is normally written.
+  let body = trimmed.replace(/[−–—]/g, "-");
+  const bracketed = /\(\s*(disadvantage|advantage|dis|adv)\s*\)/.exec(body);
+  if (bracketed) body = `${body.slice(0, bracketed.index)}${body.slice(bracketed.index + bracketed[0].length)} ${bracketed[1]}`.trim();
   let mode: Advantage = "flat";
   const suffix = MODE_SUFFIX.exec(body);
   if (suffix) {

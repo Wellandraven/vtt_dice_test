@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatNotation, parseNotation, type NotationRoll } from "../app/diceNotation.js";
+import { INTERFACES, STUDY_SEQUENCES, isValidSelection, tasksForInterface, type StudyTask } from "../study/protocol.js";
 
 function roll(text: string): NotationRoll {
   const result = parseNotation(text);
@@ -53,6 +54,13 @@ describe("parseNotation: accepted rolls", () => {
   it("reads 2d20kh1 / 2d20kl1 as one d20 with advantage / disadvantage", () => {
     expect(roll("2d20kh1+5")).toEqual({ picks: { 20: 1 }, modifier: 5, mode: "advantage" });
     expect(roll("2d20kl1")).toEqual({ picks: { 20: 1 }, modifier: 0, mode: "disadvantage" });
+  });
+
+  it("reads targets exactly as the study tasks print them", () => {
+    expect(roll("1d20 (Adv) +1")).toEqual({ picks: { 20: 1 }, modifier: 1, mode: "advantage" });
+    expect(roll("1d20 (Dis) +2")).toEqual({ picks: { 20: 1 }, modifier: 2, mode: "disadvantage" });
+    expect(roll("1d10 −1")).toEqual({ picks: { 10: 1 }, modifier: -1, mode: "flat" });
+    expect(roll("1d8 +0")).toEqual({ picks: { 8: 1 }, modifier: 0, mode: "flat" });
   });
 
   it("allows the modifier limit itself", () => {
@@ -111,6 +119,20 @@ describe("parseNotation: rejected rolls", () => {
 
   it("rejects input over the length limit", () => {
     expect(error(`1d6${"+1".repeat(40)}`)).toMatch(/under 60 characters/);
+  });
+});
+
+describe("every study task's printed formula", () => {
+  it("types to exactly the roll the task checks for", () => {
+    // A participant who types what the task shows must pass `isValidSelection` — otherwise the typed
+    // field would be measured as slower or more error-prone for a reason that is only formatting.
+    const tasks = new Map<string, StudyTask>();
+    for (const sequence of STUDY_SEQUENCES) for (const id of INTERFACES) for (const task of tasksForInterface(sequence, id)) tasks.set(task.id, task);
+    expect(tasks.size).toBeGreaterThan(5);
+    for (const task of tasks.values()) {
+      const typed = roll(task.formula);
+      expect(isValidSelection(typed, task.target), `${task.id}: "${task.formula}"`).toBe(true);
+    }
   });
 });
 
