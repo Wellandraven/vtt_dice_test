@@ -69,6 +69,26 @@ front of anybody.
   nothing thrown yet it throws a sample handful and deliberately does not record it as a result.
 - **Keyboard works the same way**: Tab to Roll the dice, then press Enter or Space.
 
+## Typed rolls
+
+Every interface (A, B and C) has a **Type a roll** field at the top of the dice panel, added in
+study phase v17. Press Enter, or click Roll the dice, to roll what is typed; the buttons update to
+match. Parsing lives in `app/diceNotation.ts` (DOM-free, tested in `tests/diceNotation.test.ts`).
+
+- **Accepted:** `NdX` for d4, d6, d8, d10, d12, d20, d100 (`d%` = d100; `N` defaults to 1); any
+  number of `+n`/`-n` terms, summed into one modifier within ±20; a trailing `adv`/`advantage` or
+  `dis`/`disadvantage`, or `2d20kh1` / `2d20kl1`. Case and spaces around `+`, `-` and `d` are
+  ignored. Example: `d20 + 5 ADV` is read, and rewritten, as `1d20+5 adv`.
+- **Rejected, with a specific message, and never rolled:** unsupported dice, `0d6`, no dice,
+  subtracted dice, a modifier past ±20, more than 100 of one die (where the engine stops counting),
+  advantage on anything but a single d20 (the SRD rule `allowsAdvantage` enforces), other keep
+  rules such as `4d6kh3`, and anything unrecognised.
+- **The field and the buttons never disagree.** Changing dice, modifier or Advantage with the
+  buttons, Reset, or a new task clears the field.
+- **Study data:** each `roll-initiated` event carries `source: "typed" | "controls"`, stored in the
+  `valid_roll_initiated` / `invalid_roll` payloads. Interactions `notation-field`, `notation-submit`
+  and `notation-error` are logged too. `isValidSelection` ignores `source`, so scoring is unchanged.
+
 ## The Modifier row
 
 Interface A uses a visible numeric accumulator. The first button switches between positive and

@@ -17,6 +17,7 @@ import {
   trayLine,
   type DiceTray,
 } from "./diceTray.js";
+import { formatNotation, parseNotation } from "./diceNotation.js";
 
 // The dice roller, wired up.
 //
@@ -65,6 +66,8 @@ const dicePanelLine = document.querySelector<HTMLElement>("#dice-panel-line")!;
 const diceResetButton = document.querySelector<HTMLButtonElement>("#dice-reset")!;
 const diceRollButton = document.querySelector<HTMLButtonElement>("#dice-roll")!;
 const diceClearButton = document.querySelector<HTMLButtonElement>("#dice-clear")!;
+const diceNotationInput = document.querySelector<HTMLInputElement>("#dice-notation")!;
+const diceNotationError = document.querySelector<HTMLElement>("#dice-notation-error")!;
 const diceStageEl = document.querySelector<HTMLElement>("#dice-stage")!;
 const diceStageCanvas = document.querySelector<HTMLCanvasElement>("#dice-stage-canvas")!;
 const railCharacter = document.querySelector<HTMLElement>("#rail-character")!;
@@ -115,6 +118,7 @@ function setActiveInterface(interfaceId: unknown): void {
  * out of whichever one you had just clicked.
  */
 function renderDicePanel(): void {
+  noticeSelectionChange();
   if (diceTypeRow.childElementCount === 0) {
     // From `DICE` rather than typed into the markup: a list in the HTML is a list wired to
     // nothing, and this one has to agree with what engine/tray.ts will actually roll.
@@ -262,7 +266,7 @@ function renderDicePanel(): void {
 
   diceSoundButton.setAttribute("aria-pressed", tray.muted ? "false" : "true");
   diceSoundButton.title = tray.muted ? "Sound off" : "Sound on";
-  diceRollButton.disabled = trayTotal(tray.picks) === 0 || Boolean(pendingRoll);
+  syncRollButton();
   renderDiceSection();
 }
 
@@ -345,6 +349,76 @@ function showRollResultToast(roll: TrayRoll): void {
 }
 
 /**
+ * The typed-roll field: `2d6+3`, `1d20+5 adv`. See app/diceNotation.ts for what it accepts.
+ *
+ * **The field and the buttons never disagree about what Roll will do.** A typed roll that applies
+ * sets the buttons to match; any other change to the selection — a die, the modifier, Advantage,
+ * Reset, a new task — clears the field. That rule lives in `noticeSelectionChange`, which every
+ * render passes through, so a control added later is covered without remembering to wire it here.
+ */
+let notationDirty = false;
+let applyingNotation = false;
+let selectionSource: "typed" | "controls" = "controls";
+let selectionKey = selectionKeyOf(tray);
+
+function selectionKeyOf(current: DiceTray): string {
+  return formatNotation({ picks: current.picks, modifier: current.modifier, mode: current.mode });
+}
+
+/** Roll is available with dice in the tray, or with a typed roll waiting to be applied. */
+function syncRollButton(): void {
+  diceRollButton.disabled = (trayTotal(tray.picks) === 0 && !notationDirty) || Boolean(pendingRoll);
+}
+
+function noticeSelectionChange(): void {
+  const key = selectionKeyOf(tray);
+  if (key === selectionKey) return;
+  selectionKey = key;
+  if (!applyingNotation) clearNotation();
+}
+
+function showNotationError(message: string): void {
+  diceNotationError.textContent = message;
+  diceNotationError.hidden = !message;
+  if (message) diceNotationInput.setAttribute("aria-invalid", "true");
+  else diceNotationInput.removeAttribute("aria-invalid");
+}
+
+function clearNotation(): void {
+  diceNotationInput.value = "";
+  notationDirty = false;
+  selectionSource = "controls";
+  showNotationError("");
+}
+
+/** Read the field into the tray. False, with the reason shown, if it is not a roll this game has. */
+function applyNotation(): boolean {
+  const result = parseNotation(diceNotationInput.value);
+  if (!result.ok) {
+    showNotationError(result.error);
+    noteInteraction("notation-error");
+    return false;
+  }
+  const { picks, modifier, mode } = result;
+  applyingNotation = true;
+  tray = { ...tray, picks: { ...picks }, modifier, modifierNegative: modifier < 0, mode };
+  renderDicePanel();
+  applyingNotation = false;
+  diceNotationInput.value = formatNotation({ picks, modifier, mode });
+  notationDirty = false;
+  selectionSource = "typed";
+  showNotationError("");
+  noteInteraction("notation-submit");
+  return true;
+}
+
+/** The Roll button: anything typed and not yet applied is applied first, and never rolled if invalid. */
+function rollFromButton(): void {
+  if (notationDirty && !applyNotation()) return;
+  rollDice();
+}
+
+/**
  * Click: roll it now, then throw dice that already know what they are going to say.
  *
  * The click is also the gesture the sound needs to wake up in — a browser will not start an audio
@@ -364,6 +438,9 @@ function rollDice(): void {
     picks: { ...tray.picks },
     mode: tray.mode,
     modifier,
+    // How this selection was built — typed or with the buttons — so the study can compare them.
+    // `isValidSelection` reads only picks, mode and modifier, so this cannot affect scoring.
+    source: selectionSource,
   });
   showTray();
   // The first throw waits on the tray models, so the stage is not busy yet when this returns.
@@ -538,11 +615,25 @@ window.addEventListener("keydown", (event) => {
 diceResetButton.addEventListener("click", () => {
   noteInteraction("reset");
   tray = resetTray(tray);
+  // Cleared here as well, for text typed into an already-empty tray: no selection changes then.
+  clearNotation();
   renderDicePanel();
 });
 // **One click rolls.** A button's click already covers mouse, touch, Enter and Space, and a second
 // click while the dice are still moving is ignored by `rollDice` itself.
-diceRollButton.addEventListener("click", rollDice);
+diceRollButton.addEventListener("click", rollFromButton);
+diceNotationInput.addEventListener("focus", () => noteInteraction("notation-field"));
+diceNotationInput.addEventListener("input", () => {
+  notationDirty = diceNotationInput.value.trim() !== "";
+  showNotationError("");
+  syncRollButton();
+});
+// Enter in the field is the same as Roll: apply what was typed, and roll only if it was a real roll.
+diceNotationInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  if (applyNotation()) rollDice();
+});
 // **The setting is written whether or not the stage exists yet**, because the panel opens long
 // before anything has been rolled and the stage is built lazily on the first one. `diceStage()`
 // reads it back on the way up rather than this reaching in to create a WebGL context for a mute.

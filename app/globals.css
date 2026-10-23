@@ -505,7 +505,8 @@ input {
 }
 
 .is-task-locked #dice-open,
-.is-task-locked #dice-panel button {
+.is-task-locked #dice-panel button,
+.is-task-locked #dice-panel input {
   pointer-events: none;
   opacity: 0.58;
 }
@@ -939,6 +940,51 @@ input {
   color: #04131f;
   background: var(--accent);
   font-weight: 800;
+}
+
+#dice-notation {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid #3a4751;
+  border-radius: 6px;
+  color: #dce4ea;
+  background: #111a21;
+  font: 600 13px/1.2 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+#dice-notation::placeholder {
+  color: #63717b;
+  font-weight: 400;
+}
+
+#dice-notation:hover {
+  border-color: #65737c;
+}
+
+#dice-notation:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+#dice-notation[aria-invalid="true"] {
+  border-color: #ef7c72;
+}
+
+#dice-notation-error {
+  margin: 5px 0 0;
+  color: #ffb4ab;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* Narrow enough that the field, Advantage and the Roll buttons share the toolbar's second row. */
+#dice-panel[data-interface="C"] #dice-notation-block {
+  order: 4;
+  flex: 0 1 200px;
 }
 
 .dice-row button:disabled,

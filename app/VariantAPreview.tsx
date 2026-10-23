@@ -661,6 +661,7 @@ export default function VariantAPreview({ previewInterface }: { previewInterface
         <div id="dice-stage" title="Click to clear the dice" hidden><canvas id="dice-stage-canvas" aria-label="Animated three-dimensional dice tray" /></div>
         <section id="dice-panel" aria-label={`Interface ${interfaceId} dice controls`} hidden>
           <div id="dice-panel-head"><span id="dice-panel-title">Roll Dice</span><button id="dice-settings" type="button" aria-label="Dice settings" aria-controls="dice-settings-layer" aria-expanded="false" title="Dice settings">⚙︎</button><button id="dice-sound" type="button" aria-pressed="true" aria-label="Sound">🔊</button><button id="dice-close" type="button" aria-label="Close">×</button></div>
+          <div id="dice-notation-block"><label className="dice-label" htmlFor="dice-notation">Type a roll</label><input id="dice-notation" type="text" inputMode="text" autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={60} placeholder="e.g. 2d6+3 or 1d20+5 adv" aria-describedby="dice-notation-error" /><p id="dice-notation-error" aria-live="polite" hidden /></div>
           <div id="dice-type-block"><span className="dice-label">Dice</span><div className="dice-row" id="dice-type-row" /></div>
           <div id="dice-stepper-block" hidden><span className="dice-label">Dice</span><div id="dice-stepper-grid" /></div>
           <div id="dice-mode-block"><span className="dice-label">Advantage</span><div className="dice-row" id="dice-mode-row" /></div>
